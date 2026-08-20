@@ -309,6 +309,20 @@ Delete a database row.
 | `X-Notion-Token` header | Per-request Notion token (HTTP only). Overrides `NOTION_TOKEN_V2`. |
 | `NOTION_MCP_AUTH_TOKEN` | Bearer token for HTTP auth (not used in stdio). |
 
+## Known limitations
+
+### Formula and rollup columns
+
+`get_database` and `query_database` show `(computed)` for formula and rollup
+columns. Notion evaluates these **browser-side** (JavaScript) and does not return
+values via the internal API. This is a limitation of the cookie-based API, not a
+bug — the Python library cannot evaluate Notion formulas without reimplementing
+Notion's formula engine.
+
+If you need formula/rollup values, read the source relation columns directly
+(e.g. read `ผู้ประสานงาน` column instead of the `ชื่อผู้ประสานงาน` formula that
+derives from it).
+
 ## Error messages
 
 | Error | Cause | Fix |

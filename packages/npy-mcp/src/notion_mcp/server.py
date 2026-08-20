@@ -357,6 +357,11 @@ def get_database(
 
     Returns:
         Database name, column schema, and sample row data as markdown.
+
+    Note: Formula and rollup columns show '(computed)' as placeholder.
+        Notion evaluates these browser-side (JavaScript) and does not return
+        values via the API. This is a known limitation of the cookie-based
+        internal API — not a bug.
     """
     client = _get_client()
     block = client.get_block(database_id)
@@ -421,6 +426,11 @@ def query_database(
 
     Returns:
         Markdown table of database rows with all properties.
+
+    Note: Formula and rollup columns show '(computed)' as placeholder.
+        Notion evaluates these browser-side (JavaScript) and does not return
+        values via the API. This is a known limitation of the cookie-based
+        internal API — not a bug.
     """
     client = _get_client()
     block = client.get_block(database_id)
