@@ -302,28 +302,40 @@ By default, the MCP server exposes only **6 read tools**. Set
 - Read: `search`, `get_page`, `get_block`, `list_pages`, `get_database`, `query_database`
 - Write: `create_page`, `append_blocks`, `update_block`, `delete_block`, `move_block`, `add_alias`, `add_database_row`, `update_database_row`, `delete_database_row`
 
-## AI Skill
+## AI Skills
 
-An AI skill is included in `packages/npy-mcp/skills/notion-mcp/` to help AI agents
-(Claude, Cursor, opencode) use the MCP tools effectively — it tells the agent which
-tool to use for each task, common workflows, and write safety rules.
+Two AI skills are included to help AI agents (Claude, Cursor, opencode) use
+the MCP tools and manage releases.
 
-### Install the skill
+### Notion MCP skill
+
+Tells the agent which tool to use for each task, common workflows, and write safety rules.
 
 ```bash
-# For opencode
+# For opencode / Claude Desktop / Cursor
 cp -r packages/npy-mcp/skills/notion-mcp ~/.config/opencode/skills/notion-mcp
-
-# For Claude Desktop
 cp -r packages/npy-mcp/skills/notion-mcp ~/.claude/skills/notion-mcp
-
-# For Cursor / other agents
 cp -r packages/npy-mcp/skills/notion-mcp ~/.agents/skills/notion-mcp
 ```
 
-The skill contains:
+Contains:
 - `SKILL.md` — trigger description, tool selection guide, common workflows, write safety
 - `TOOLS.md` — full reference for all 15 tools (args, types, examples, error messages)
+
+### Release skill
+
+Automates version bump, changelog update, git tag, and GitHub Release creation.
+
+```bash
+# For opencode / Claude Desktop / Cursor
+cp -r packages/npy-mcp/skills/release ~/.config/opencode/skills/release
+cp -r packages/npy-mcp/skills/release ~/.claude/skills/release
+cp -r packages/npy-mcp/skills/release ~/.agents/skills/release
+```
+
+Contains:
+- `SKILL.md` — pre-release checklist, 7-step release workflow, confirmation gates
+- `REFERENCE.md` — version rules, changelog format, gh/docker commands, rollback procedures
 
 ## Getting your token_v2
 
