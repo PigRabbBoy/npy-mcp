@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-08-20
+
+### Fixed
+- User rendering now consistent across `get_database` and `query_database` — uses `.get()` from store data instead of lazy property attrs (was returning email on one call, name on another for the same user)
+- `CollectionRowBlock` checked before `User` in `_render_property` — both have `.email`/`.role`/`.id`, but only CollectionRowBlock has `.title_plaintext` (was rendering relation titles as UUIDs)
+- Formula/rollup columns now show `(computed)` instead of empty cells — Notion computes these browser-side, the API doesn't return values
+
 ## [0.2.3] - 2026-08-20
 
 ### Fixed
