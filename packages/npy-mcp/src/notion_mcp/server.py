@@ -80,6 +80,20 @@ def _get_client() -> NotionClient:
     return client
 
 
+def _format_icon(icon: str) -> str:
+    """Format a page icon for inline display.
+
+    Emoji icons are kept inline; URL/attachment/path icons are dropped
+    (they render as noise in text output and waste tokens).
+    """
+    if not icon:
+        return ""
+    # Emoji icons are short and don't start with / http or attachment:
+    if icon.startswith(("/", "http", "attachment:")):
+        return ""
+    return icon
+
+
 def _block_summary(block) -> dict:
     """Compact block dict for tool output."""
     url = ""
@@ -256,7 +270,7 @@ def search(
     lines = []
     for b in results:
         s = _block_summary(b)
-        icon = s["icon"] or ""
+        icon = _format_icon(s["icon"] or "")
         title = s["title"] or ""
         lines.append(f"[{s['type']}] {icon}{title}\n  {s['url']}")
     return "\n".join(lines)
@@ -323,8 +337,10 @@ def list_pages() -> str:
     lines = []
     for p in pages:
         s = _block_summary(p)
-        icon = s["icon"] or ""
         title = s["title"] or ""
+        if not title:
+            continue  # skip untitled/empty blocks
+        icon = _format_icon(s["icon"] or "")
         lines.append(f"[page] {icon}{title}\n  {s['url']}")
     return "\n".join(lines)
 
@@ -383,14 +399,14 @@ def query_database(
     database_id: str,
     limit: int = 20,
 ) -> str:
-    """Query a Notion database and return rows as markdown.
+    """Query a Notion database and return rows as a markdown table.
 
     Args:
         database_id: Database block URL or ID, or collection ID
         limit: Maximum rows to return (default 20)
 
     Returns:
-        Markdown listing of database rows with all properties.
+        Markdown table of database rows with all properties.
     """
     client = _get_client()
     block = client.get_block(database_id)
@@ -407,18 +423,32 @@ def query_database(
     # Build slug → name map for readable column keys
     schema = collection.get_schema_properties() if hasattr(collection, "get_schema_properties") else []
     slug_to_name: dict[str, str] = {}
+    col_names: list[str] = []
     for prop in schema:
         pname = prop.get("name", "?")
         pslug = prop.get("slug", pname)
         slug_to_name[pslug] = pname
+        col_names.append(pname)
     rows = collection.get_rows()[:limit] if hasattr(collection, "get_rows") else []
     if not rows:
         return "(no rows)"
+    # Build markdown table
     lines = []
+    # Header
+    lines.append("| " + " | ".join(col_names) + " |")
+    lines.append("| " + " | ".join("---" for _ in col_names) + " |")
+    # Rows
     for row in rows:
-        parts = _render_row_props(row, slug_to_name)
-        lines.append("\n".join(parts))
-        lines.append("---")
+        try:
+            props = row.get_all_properties()
+        except Exception:
+            props = {}
+        cells = []
+        for prop in schema:
+            pslug = prop.get("slug", prop.get("name", "?"))
+            v = props.get(pslug, "")
+            cells.append(_render_property(v).replace("|", "\\|").replace("\n", " "))
+        lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines)
 
 
