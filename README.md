@@ -89,7 +89,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
   "mcpServers": {
     "notion-py": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/PigRabbBoy/npy-mcp", "notion-mcp"],
+      "args": ["--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/npy-mcp", "notion-mcp"],
       "env": {
         "NOTION_TOKEN_V2": "v03%3AeyJ..."
       }
@@ -104,7 +104,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
   "mcpServers": {
     "notion-py": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/PigRabbBoy/npy-mcp", "notion-mcp"],
+      "args": ["--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/npy-mcp", "notion-mcp"],
       "env": {
         "NOTION_TOKEN_V2": "v03%3AeyJ..."
       }
@@ -120,7 +120,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
     "notion-py": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/PigRabbBoy/npy-mcp", "notion-mcp"],
+      "args": ["--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/npy-mcp", "notion-mcp"],
       "env": {
         "NOTION_TOKEN_V2": "v03%3AeyJ..."
       }
@@ -135,7 +135,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
   "mcpServers": {
     "notion-py": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/PigRabbBoy/npy-mcp", "notion-mcp"],
+      "args": ["--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/npy-mcp", "notion-mcp"],
       "env": {
         "NOTION_TOKEN_V2": "v03%3AeyJ..."
       }
@@ -148,7 +148,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ```toml
 [mcp_servers.notion-py]
 command = "uvx"
-args = ["--from", "git+https://github.com/PigRabbBoy/npy-mcp", "notion-mcp"]
+args = ["--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/npy-mcp", "notion-mcp"]
 env = { NOTION_TOKEN_V2 = "v03%3AeyJ..." }
 ```
 
@@ -228,7 +228,7 @@ env = { NOTION_TOKEN_V2 = "v03%3AeyJ..." }
 #### Option 3: pip install (for developers with Python)
 
 ```bash
-pip install git+https://github.com/PigRabbBoy/npy-mcp
+pip install "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/npy-mcp"
 ```
 
 **Claude Desktop:**
