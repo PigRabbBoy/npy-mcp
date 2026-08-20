@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-08-20
+
+### Added
+- All requests now mimic browser headers: `User-Agent` (Chrome), `Accept: application/json`, `Referer`, `Origin`, `x-notion-active-user-header`, `x-notion-space-id` — reduces bot detection risk and rate-limit differences vs browser sessions
+
 ## [0.2.5] - 2026-08-20
 
 ### Changed
