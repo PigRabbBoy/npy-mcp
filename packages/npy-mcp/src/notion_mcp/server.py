@@ -146,18 +146,20 @@ def _render_property(value) -> str:
         return ""
     if isinstance(value, list):
         return ", ".join(_render_property(v) for v in value)
-    # User — check before CollectionRowBlock since both have .id
-    # User has .email/.full_name/.given_name as properties, .role
+    # CollectionRowBlock — check before User since both have .id, .email, .role
+    # CollectionRowBlock has .title_plaintext; User does not
+    if hasattr(value, "title_plaintext") and hasattr(value, "id"):
+        return value.title_plaintext or value.id
+    # User — has .email/.role but NOT .title_plaintext
+    # IMPORTANT: use .get() not property attrs — property attrs are lazy/cached
+    # and may return stale empty values even when store data is populated.
     if hasattr(value, "email") and hasattr(value, "role"):
-        email = getattr(value, "email", None) or ""
-        name = getattr(value, "full_name", None) or getattr(value, "given_name", None) or ""
-        # full_name/given_name may be empty; try record data directly
-        if not name and hasattr(value, "get"):
-            name = value.get("name") or ""
-        if email:
-            return str(email)
+        email = value.get("email") or "" if hasattr(value, "get") else ""
+        name = value.get("name") or "" if hasattr(value, "get") else ""
         if name:
             return str(name)
+        if email:
+            return str(email)
         return getattr(value, "id", str(value))
     # NotionDate — has start/end attributes
     if hasattr(value, "start") and hasattr(value, "end") and hasattr(value, "timezone"):
@@ -166,9 +168,6 @@ def _render_property(value) -> str:
         if start and end:
             return f"{start} → {end}"
         return str(start or end or "")
-    # CollectionRowBlock — render its title
-    if hasattr(value, "title_plaintext") and hasattr(value, "id"):
-        return value.title_plaintext or value.id
     # Fallback: str() but strip memory addresses
     s = str(value)
     if " object at 0x" in s:
@@ -375,6 +374,7 @@ def get_database(
     schema = collection.get_schema_properties() if hasattr(collection, "get_schema_properties") else []
     # Build slug → name map for readable column keys
     slug_to_name: dict[str, str] = {}
+    formula_slugs: set[str] = set()
     lines = [f"# {name}", ""]
     lines.append("## Columns")
     for prop in schema:
@@ -382,13 +382,27 @@ def get_database(
         ptype = prop.get("type", "?")
         pslug = prop.get("slug", pname)
         slug_to_name[pslug] = pname
+        if ptype in ("formula", "rollup"):
+            formula_slugs.add(pslug)
         lines.append(f"  - **{pname}** ({ptype})")
     lines.append("")
     rows = collection.get_rows()[:sample_rows] if hasattr(collection, "get_rows") else []
     if rows:
         lines.append(f"## Sample rows ({len(rows)})")
         for row in rows:
-            parts = _render_row_props(row, slug_to_name)
+            try:
+                props = row.get_all_properties()
+            except Exception:
+                props = {}
+            parts = []
+            for prop in schema:
+                pname = prop.get("name", "?")
+                pslug = prop.get("slug", pname)
+                v = props.get(pslug, "")
+                rendered = _render_property(v)
+                if not rendered and pslug in formula_slugs:
+                    rendered = "(computed)"
+                parts.append(f"  {pname}: {rendered}")
             lines.append("\n".join(parts))
             lines.append("---")
     return "\n".join(lines)
@@ -424,11 +438,15 @@ def query_database(
     schema = collection.get_schema_properties() if hasattr(collection, "get_schema_properties") else []
     slug_to_name: dict[str, str] = {}
     col_names: list[str] = []
+    formula_slugs: set[str] = set()
     for prop in schema:
         pname = prop.get("name", "?")
         pslug = prop.get("slug", pname)
+        ptype = prop.get("type", "?")
         slug_to_name[pslug] = pname
         col_names.append(pname)
+        if ptype in ("formula", "rollup"):
+            formula_slugs.add(pslug)
     rows = collection.get_rows()[:limit] if hasattr(collection, "get_rows") else []
     if not rows:
         return "(no rows)"
@@ -447,7 +465,12 @@ def query_database(
         for prop in schema:
             pslug = prop.get("slug", prop.get("name", "?"))
             v = props.get(pslug, "")
-            cells.append(_render_property(v).replace("|", "\\|").replace("\n", " "))
+            rendered = _render_property(v)
+            # Formula/rollup values are computed browser-side and not returned
+            # by the API — show placeholder instead of empty cell
+            if not rendered and pslug in formula_slugs:
+                rendered = "(computed)"
+            cells.append(rendered.replace("|", "\\|").replace("\n", " "))
         lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines)
 
