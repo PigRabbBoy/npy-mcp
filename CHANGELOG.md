@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-08-20
+
+### Changed
+- Formula/rollup limitation documented in `get_database` and `query_database` docstrings + TOOLS.md "Known limitations" section — Notion evaluates these browser-side (JavaScript), the internal API does not return values; read source relation columns directly instead
+
 ## [0.2.4] - 2026-08-20
 
 ### Fixed
