@@ -302,6 +302,29 @@ By default, the MCP server exposes only **6 read tools**. Set
 - Read: `search`, `get_page`, `get_block`, `list_pages`, `get_database`, `query_database`
 - Write: `create_page`, `append_blocks`, `update_block`, `delete_block`, `move_block`, `add_alias`, `add_database_row`, `update_database_row`, `delete_database_row`
 
+## AI Skill
+
+An AI skill is included in `packages/npy-mcp/skills/notion-mcp/` to help AI agents
+(Claude, Cursor, opencode) use the MCP tools effectively — it tells the agent which
+tool to use for each task, common workflows, and write safety rules.
+
+### Install the skill
+
+```bash
+# For opencode
+cp -r packages/npy-mcp/skills/notion-mcp ~/.config/opencode/skills/notion-mcp
+
+# For Claude Desktop
+cp -r packages/npy-mcp/skills/notion-mcp ~/.claude/skills/notion-mcp
+
+# For Cursor / other agents
+cp -r packages/npy-mcp/skills/notion-mcp ~/.agents/skills/notion-mcp
+```
+
+The skill contains:
+- `SKILL.md` — trigger description, tool selection guide, common workflows, write safety
+- `TOOLS.md` — full reference for all 15 tools (args, types, examples, error messages)
+
 ## Getting your token_v2
 
 1. Open https://app.notion.com in Chrome (logged in)
