@@ -53,6 +53,16 @@ def create_session(client_specified_retry=None):
         )
     adapter = HTTPAdapter(max_retries=retry)
     session.mount("https://", adapter)
+    # Mimic browser headers to avoid bot detection / rate-limit differences
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) "
+                       "Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Referer": "https://app.notion.com/",
+        "Origin": "https://app.notion.com",
+    })
     return session
 
 
@@ -252,9 +262,17 @@ class NotionClient(object):
     def post(self, endpoint, data):
         """
         All API requests on Notion.so are done as POSTs (except the websocket communications).
+        Injects x-notion-active-user-header and x-notion-space-id to mimic browser.
         """
         url = urljoin(API_BASE_URL, endpoint)
-        response = self.session.post(url, json=data)
+        headers = {}
+        current_user = getattr(self, "current_user", None)
+        current_space = getattr(self, "current_space", None)
+        if current_user:
+            headers["x-notion-active-user-header"] = current_user.id
+        if current_space:
+            headers["x-notion-space-id"] = current_space.id
+        response = self.session.post(url, json=data, headers=headers)
         if response.status_code == 400:
             logger.error(
                 "Got 400 error attempting to POST to {}, with data: {}".format(
