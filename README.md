@@ -129,6 +129,21 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 }
 ```
 
+**Claude Code** (`.mcp.json` in project root, or `~/.claude.json` for global):
+```json
+{
+  "mcpServers": {
+    "notion-py": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/PigRabbBoy/npy-mcp", "notion-mcp"],
+      "env": {
+        "NOTION_TOKEN_V2": "v03%3AeyJ..."
+      }
+    }
+  }
+}
+```
+
 #### Option 2: Docker (no Python needed)
 
 Pull the image and run via stdio. No Python or uv installation required.
@@ -169,6 +184,21 @@ Pull the image and run via stdio. No Python or uv installation required.
   "servers": {
     "notion-py": {
       "type": "stdio",
+      "command": "docker",
+      "args": ["run", "--rm", "-i", "-e", "NOTION_TOKEN_V2", "pigrabbboy/npy-mcp:latest", "--transport", "stdio"],
+      "env": {
+        "NOTION_TOKEN_V2": "v03%3AeyJ..."
+      }
+    }
+  }
+}
+```
+
+**Claude Code** (`.mcp.json` or `~/.claude.json`):
+```json
+{
+  "mcpServers": {
+    "notion-py": {
       "command": "docker",
       "args": ["run", "--rm", "-i", "-e", "NOTION_TOKEN_V2", "pigrabbboy/npy-mcp:latest", "--transport", "stdio"],
       "env": {
@@ -221,6 +251,21 @@ pip install git+https://github.com/PigRabbBoy/npy-mcp
   "servers": {
     "notion-py": {
       "type": "stdio",
+      "command": "python",
+      "args": ["-m", "notion_mcp"],
+      "env": {
+        "NOTION_TOKEN_V2": "v03%3AeyJ..."
+      }
+    }
+  }
+}
+```
+
+**Claude Code** (`.mcp.json` or `~/.claude.json`):
+```json
+{
+  "mcpServers": {
+    "notion-py": {
       "command": "python",
       "args": ["-m", "notion_mcp"],
       "env": {
@@ -304,7 +349,7 @@ By default, the MCP server exposes only **6 read tools**. Set
 
 ## AI Skills
 
-Two AI skills are included to help AI agents (Claude, Cursor, opencode) use
+Two AI skills are included to help AI agents (Claude Desktop, Claude Code, Cursor, VS Code, opencode) use
 the MCP tools and manage releases.
 
 ### Notion MCP skill
@@ -312,7 +357,7 @@ the MCP tools and manage releases.
 Tells the agent which tool to use for each task, common workflows, and write safety rules.
 
 ```bash
-# For opencode / Claude Desktop / Cursor
+# For opencode / Claude Desktop / Claude Code / Cursor / VS Code
 cp -r packages/npy-mcp/skills/notion-mcp ~/.config/opencode/skills/notion-mcp
 cp -r packages/npy-mcp/skills/notion-mcp ~/.claude/skills/notion-mcp
 cp -r packages/npy-mcp/skills/notion-mcp ~/.agents/skills/notion-mcp
@@ -327,7 +372,7 @@ Contains:
 Automates version bump, changelog update, git tag, and GitHub Release creation.
 
 ```bash
-# For opencode / Claude Desktop / Cursor
+# For opencode / Claude Desktop / Claude Code / Cursor / VS Code
 cp -r packages/npy-mcp/skills/release ~/.config/opencode/skills/release
 cp -r packages/npy-mcp/skills/release ~/.claude/skills/release
 cp -r packages/npy-mcp/skills/release ~/.agents/skills/release
