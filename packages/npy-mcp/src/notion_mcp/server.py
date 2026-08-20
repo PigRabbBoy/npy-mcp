@@ -44,6 +44,9 @@ def _get_client() -> NotionClient:
     1. Per-request token from contextvar (set by HTTP middleware via X-Notion-Token header)
     2. NOTION_TOKEN_V2 / NOTION_TOKEN env var
     3. ~/.config/notion-py/token config file
+
+    Raises RuntimeError with a helpful message if the token is invalid or expired,
+    instead of letting the HTTP 401 crash the MCP connection.
     """
     token = notion_token_var.get()
     if token is None:
@@ -52,7 +55,19 @@ def _get_client() -> NotionClient:
     # Cache client per token to avoid re-init on every request
     if token in _client_cache:
         return _client_cache[token]
-    client = NotionClient(token_v2=token)
+    try:
+        client = NotionClient(token_v2=token)
+    except Exception as exc:
+        # Invalidate cache entry if it was cached before but is now failing
+        _client_cache.pop(token, None)
+        msg = str(exc)
+        if "401" in msg or "Unauthorized" in msg:
+            raise RuntimeError(
+                "Notion token is invalid or expired. Extract a fresh token_v2 "
+                "from browser DevTools (Application → Cookies → token_v2) and "
+                "update NOTION_TOKEN_V2."
+            ) from exc
+        raise RuntimeError(f"Failed to connect to Notion: {exc}") from exc
     # Try to bind space from config/env
     cfg = resolve_auth()
     space_id = cfg.get("space_id")
