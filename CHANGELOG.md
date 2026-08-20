@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-08-20
+
+### Fixed
+- Non-emoji icons (URL, attachment, SVG path) stripped from `list_pages` and `search` titles — emoji icons kept inline
+- `query_database` now returns a real markdown table instead of key/value blocks (saves tokens for wide databases)
+- `list_pages` skips entries with empty titles (was showing `[page]` with no content)
+- User rendering now consistent across `get_database` and `query_database` (name → email → id fallback)
+
 ## [0.2.2] - 2026-08-20
 
 ### Fixed
