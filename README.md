@@ -1,4 +1,4 @@
-# notion-py v2
+# npy-mcp — Notion MCP Server + CLI
 
 Unofficial Python 3.12+ client for Notion's internal API (v3). Provides a core
 library, CLI, and MCP server — all powered by the `token_v2` cookie from a
