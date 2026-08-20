@@ -6,6 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-08-20
+
+### Fixed
+- Notion property values now render as readable strings instead of Python repr (User → email/name, CollectionRowBlock → title, NotionDate → ISO date)
+- Column keys use original schema names instead of transliterated slugs (e.g. "Folder ใบเสนอราคา" not "folder_aibesn_raakhaa")
+- `get_block` returns type hint for non-text blocks instead of empty string
+- Icon prefix stripped from page titles in `_block_summary`
+- `query_database` docstring corrected: "Markdown listing" not "Markdown table"
+- Invalid/expired token no longer crashes MCP server — returns helpful error message instead
+- All `uvx`/`pip` commands now use `#subdirectory=packages/npy-mcp` (build was failing without it)
+- `--refresh` flag added to all uvx configs so MCP server auto-updates from git on restart
+
+### Added
+- Claude Code config (`.mcp.json` / `~/.claude.json`) for all 3 stdio setup options
+- Codex config (`~/.codex/config.toml`) for all 3 stdio setup options
+- "Setting your space ID" section with 3 methods + resolution order
+- "How to find your space ID" with 3 methods (CLI, DevTools, URL)
+
 ## [0.2.1] - 2026-08-20
 
 ### Added
