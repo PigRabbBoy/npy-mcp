@@ -416,6 +416,64 @@ Contains:
 read/write everything you can. Don't commit it to git, don't share it, and
 invalidate it (Notion Settings → Log out of all sessions) when done.
 
+## Setting your space ID
+
+If your token has access to multiple Notion workspaces (spaces), you need to
+specify which space to use. Without it, the client picks the first space it
+finds — which may not be the one you want.
+
+### Option 1: Environment variable
+
+```bash
+export NOTION_SPACE_ID="1b6d9f59-d372-43b7-8cfc-332e473b1f2c"
+```
+
+Or add it to the MCP server config:
+
+```json
+"env": {
+  "NOTION_TOKEN_V2": "v03%3AeyJ...",
+  "NOTION_SPACE_ID": "1b6d9f59-d372-43b7-8cfc-332e473b1f2c"
+}
+```
+
+### Option 2: CLI (persisted to config file)
+
+```bash
+# List all spaces your token can access
+python -m notion_cli auth spaces
+
+# Set one as the default (saved to ~/.config/notion-py/config.toml)
+python -m notion_cli auth use-space 1b6d9f59-d372-43b7-8cfc-332e473b1f2c
+
+# Check current auth state
+python -m notion_cli auth whoami
+```
+
+### Option 3: Config file
+
+Write `~/.config/notion-py/config.toml`:
+
+```toml
+space_id = "1b6d9f59-d372-43b7-8cfc-332e473b1f2c"
+```
+
+### Resolution order
+
+1. `NOTION_SPACE_ID` env var
+2. `~/.config/notion-py/config.toml` (written by `notion auth use-space`)
+3. First space found in token data (default fallback)
+
+### How to find your space ID
+
+```bash
+# Run with just the token — lists all spaces with IDs
+python -m notion_cli auth spaces
+```
+
+Or look at the URL in Notion: open any page, the space ID is not in the URL,
+but `auth spaces` will list all of them.
+
 ## Development
 
 ```bash
