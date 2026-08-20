@@ -87,12 +87,17 @@ def _block_summary(block) -> dict:
         url = block.get_browseable_url()
     except Exception:
         pass
+    icon = block.get("format.page_icon") or ""
+    # Strip icon from title to avoid noise (icon is separate field)
+    title = block.title_plaintext if hasattr(block, "title_plaintext") else None
+    if title and icon and title.startswith(icon):
+        title = title[len(icon):].strip()
     return {
         "id": block.id,
         "type": block.get("type"),
-        "title": block.title_plaintext if hasattr(block, "title_plaintext") else None,
+        "title": title,
         "url": url,
-        "icon": block.get("format.page_icon"),
+        "icon": icon,
     }
 
 
@@ -111,6 +116,66 @@ def _block_tree(client: NotionClient, block, depth: int) -> dict:
         for c in children
     ]
     return d
+
+
+def _render_property(value) -> str:
+    """Render a Notion property value to a readable string.
+
+    Handles common Notion types that would otherwise leak Python repr:
+    - User → email or name (not "<User ...>")
+    - CollectionRowBlock → row title (not "<CollectionRowBlock ...>")
+    - NotionDate → ISO date string (not "<notion.collection.NotionDate ...>")
+    - list → comma-joined rendered items
+    - None → empty string
+    """
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        return ", ".join(_render_property(v) for v in value)
+    # User — check before CollectionRowBlock since both have .id
+    # User has .email/.full_name/.given_name as properties, .role
+    if hasattr(value, "email") and hasattr(value, "role"):
+        email = getattr(value, "email", None) or ""
+        name = getattr(value, "full_name", None) or getattr(value, "given_name", None) or ""
+        # full_name/given_name may be empty; try record data directly
+        if not name and hasattr(value, "get"):
+            name = value.get("name") or ""
+        if email:
+            return str(email)
+        if name:
+            return str(name)
+        return getattr(value, "id", str(value))
+    # NotionDate — has start/end attributes
+    if hasattr(value, "start") and hasattr(value, "end") and hasattr(value, "timezone"):
+        start = value.start
+        end = value.end
+        if start and end:
+            return f"{start} → {end}"
+        return str(start or end or "")
+    # CollectionRowBlock — render its title
+    if hasattr(value, "title_plaintext") and hasattr(value, "id"):
+        return value.title_plaintext or value.id
+    # Fallback: str() but strip memory addresses
+    s = str(value)
+    if " object at 0x" in s:
+        return s.split(" object at ")[0].split(".")[-1]
+    return s
+
+
+def _render_row_props(row, schema_names: dict[str, str] | None = None) -> list[str]:
+    """Render a database row's properties as readable key: value lines.
+
+    schema_names maps slug → original column name (for readable keys).
+    """
+    try:
+        props = row.get_all_properties()
+    except Exception:
+        props = {}
+    parts = []
+    for k, v in props.items():
+        label = schema_names.get(k, k) if schema_names else k
+        parts.append(f"  {label}: {_render_property(v)}")
+    return parts
 
 
 def _block_to_markdown(block) -> str:
@@ -227,13 +292,21 @@ def get_block(block_id: str) -> str:
         block_id: Block URL or ID
 
     Returns:
-        Markdown rendering of the block.
+        Markdown rendering of the block, or type info for non-text blocks.
     """
     client = _get_client()
     block = client.get_block(block_id)
     if block is None:
         return f"Block not found: {block_id}"
-    return _block_to_markdown(block)
+    md = _block_to_markdown(block)
+    btype = block.get("type", "") or ""
+    if not md.strip():
+        # Non-text block (collection_view_page, column, link_to_page, etc.)
+        title = block.title_plaintext if hasattr(block, "title_plaintext") else ""
+        if title:
+            return f"[{btype}] {title}"
+        return f"[{btype}] (no text content — use get_page or get_database for details)"
+    return md
 
 
 @mcp.tool()
@@ -284,24 +357,22 @@ def get_database(
         return f"Database not found: {database_id}"
     name = collection.name if hasattr(collection, "name") else "(unnamed)"
     schema = collection.get_schema_properties() if hasattr(collection, "get_schema_properties") else []
+    # Build slug → name map for readable column keys
+    slug_to_name: dict[str, str] = {}
     lines = [f"# {name}", ""]
     lines.append("## Columns")
     for prop in schema:
         pname = prop.get("name", "?")
         ptype = prop.get("type", "?")
+        pslug = prop.get("slug", pname)
+        slug_to_name[pslug] = pname
         lines.append(f"  - **{pname}** ({ptype})")
     lines.append("")
     rows = collection.get_rows()[:sample_rows] if hasattr(collection, "get_rows") else []
     if rows:
         lines.append(f"## Sample rows ({len(rows)})")
         for row in rows:
-            try:
-                props = row.get_all_properties()
-            except Exception:
-                props = {}
-            parts = []
-            for k, v in props.items():
-                parts.append(f"  {k}: {v}")
+            parts = _render_row_props(row, slug_to_name)
             lines.append("\n".join(parts))
             lines.append("---")
     return "\n".join(lines)
@@ -319,7 +390,7 @@ def query_database(
         limit: Maximum rows to return (default 20)
 
     Returns:
-        Markdown table of database rows.
+        Markdown listing of database rows with all properties.
     """
     client = _get_client()
     block = client.get_block(database_id)
@@ -333,18 +404,19 @@ def query_database(
             pass
     if collection is None:
         return f"Database not found: {database_id}"
+    # Build slug → name map for readable column keys
+    schema = collection.get_schema_properties() if hasattr(collection, "get_schema_properties") else []
+    slug_to_name: dict[str, str] = {}
+    for prop in schema:
+        pname = prop.get("name", "?")
+        pslug = prop.get("slug", pname)
+        slug_to_name[pslug] = pname
     rows = collection.get_rows()[:limit] if hasattr(collection, "get_rows") else []
     if not rows:
         return "(no rows)"
     lines = []
     for row in rows:
-        try:
-            props = row.get_all_properties()
-        except Exception:
-            props = {}
-        parts = []
-        for k, v in props.items():
-            parts.append(f"  {k}: {v}")
+        parts = _render_row_props(row, slug_to_name)
         lines.append("\n".join(parts))
         lines.append("---")
     return "\n".join(lines)
