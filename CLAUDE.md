@@ -122,3 +122,25 @@ NotionClient (client.py)
 See `docs/adr/` for 5 ADRs covering: canonical terminology, space binding,
 markdown export strategy, auth model, and write gate. See `CONTEXT.md` for
 the domain glossary.
+
+## Release Policy
+
+**When to release**: After any code change that affects runtime behavior
+(bug fixes, new features, API changes), create a new release. Pure doc-only
+changes that don't affect code behavior do NOT require a release.
+
+**Release process**: Use the release skill (`packages/npy-mcp/skills/release/`).
+Steps:
+1. Run tests: `python -m pytest tests/ -v`
+2. Determine version bump: `fix:` → patch, `feat:` → minor, `breaking` → major
+3. Update version in 4 `pyproject.toml` files (root + 3 packages)
+4. Update `CHANGELOG.md` (move `[Unreleased]` → `[X.Y.Z] - YYYY-MM-DD`)
+5. Commit: `git commit -m "release: vX.Y.Z"`
+6. Tag: `git tag vX.Y.Z`
+7. Push: `git push origin master --tags`
+8. GitHub Release: `gh release create vX.Y.Z --generate-notes -R PigRabbBoy/npy-mcp`
+9. Docker (optional): build + tag + push to `pigrabbboy/npy-mcp:X.Y.Z` + `:latest`
+
+**Never skip releases after behavioral code changes** — users rely on
+`--refresh` to pull the latest fix from git. An unreleased fix means users
+keep hitting the old bug.
