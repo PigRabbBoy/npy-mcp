@@ -2,6 +2,8 @@ import argparse
 import os
 import sys
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "packages", "npy-core", "src"))
+
 from notion.smoke_test import run_live_smoke_test
 
 # Following code is a sample. Input the code onto the terminal, with your own notion page URL and token_v2

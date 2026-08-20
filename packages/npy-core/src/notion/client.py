@@ -124,7 +124,11 @@ class NotionClient(object):
     def _update_user_info(self):
         records = self.post("loadUserContent", {}).json()["recordMap"]
         user_id = list(records["notion_user"].keys())[0]
-        space_id = records["user_root"][user_id]["value"]["space_view_pointers"][0]["spaceId"] if user_id in records.get("user_root", {}) else None
+        user_root_value = records["user_root"][user_id]["value"]
+        if "space_view_pointers" in user_root_value:
+            space_id = user_root_value["space_view_pointers"][0]["spaceId"]
+        else:
+            space_id = user_root_value["value"]["space_view_pointers"][0]["spaceId"]
         self._fetch_space_data(records, space_id)
 
         self._store.store_recordmap(records)
@@ -209,7 +213,7 @@ class NotionClient(object):
         """
         # if it's a URL for a database page, try extracting the collection and view IDs
         if url_or_id.startswith("http"):
-            match = re.search("([a-f0-9]{32})\?v=([a-f0-9]{32})", url_or_id)
+            match = re.search(r"([a-f0-9]{32})\?v=([a-f0-9]{32})", url_or_id)
             if not match:
                 raise Exception("Invalid collection view URL")
             block_id, view_id = match.groups()
@@ -286,9 +290,40 @@ class NotionClient(object):
         if self.in_transaction():
             self._transaction_operations += operations
         else:
-            data = {"operations": operations}
-            self.post("submitTransaction", data)
+            data = self._build_save_transactions_payload(operations)
+            self.post("saveTransactionsFanout", data)
             self._store.run_local_operations(operations)
+
+    def _build_save_transactions_payload(self, operations):
+        """
+        Convert legacy operation dicts ({id, table, path, command, args}) into
+        the new `saveTransactionsFanout` format which uses `pointer` objects
+        with {table, id, spaceId} and wraps operations in a transaction.
+        """
+        space_id = self.current_space.id if self.current_space else None
+        new_ops = []
+        for op in operations:
+            new_op = {
+                "pointer": {
+                    "table": op["table"],
+                    "id": op["id"],
+                    "spaceId": space_id,
+                },
+                "path": op.get("path", []),
+                "command": op["command"],
+                "args": op["args"],
+            }
+            new_ops.append(new_op)
+        return {
+            "requestId": str(uuid.uuid4()),
+            "transactions": [
+                {
+                    "id": str(uuid.uuid4()),
+                    "debug": {},
+                    "operations": new_ops,
+                }
+            ],
+        }
 
     def query_collection(self, *args, **kwargs):
         return self._store.call_query_collection(*args, **kwargs)

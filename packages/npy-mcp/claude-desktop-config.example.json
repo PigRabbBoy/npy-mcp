@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "notion-py": {
+      "command": "python",
+      "args": ["-m", "notion_mcp"],
+      "env": {
+        "NOTION_TOKEN_V2": "your-token_v2-here",
+        "PYTHONPATH": "/Users/pigrabb/Documents/GitHub/notion-py/packages/npy-core/src:/Users/pigrabb/Documents/GitHub/notion-py/packages/npy-mcp/src"
+      }
+    }
+  }
+}

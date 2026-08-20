@@ -4,9 +4,16 @@ build/
 dist/
 *.egg-info
 *_testing.py
+.pytest_cache/
 
-# pipenv
+# pipenv / venv
 .env
 .envrc
 .venv
 Pipfile
+
+# serena
+.serena/
+
+# uv
+uv.lock

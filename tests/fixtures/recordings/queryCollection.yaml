@@ -1,0 +1,87 @@
+interactions:
+- request:
+    body: '{"collectionId": "308bd4f4-b4de-80a5-9199-efa43e7f3bee", "collectionViewId":
+      "", "query": {"aggregate": [], "aggregator": {"aggregation": []}, "filter":
+      [], "sort": [], "search_query": "", "user_state": {"user_id": "487f0c95-5319-4abf-9b80-5a5255959ce5"},
+      "calendar": {"range": {"type": "current_week"}, "from": "calendar_start", "to":
+      "calendar_end"}, "show_calendar": false, "loader": {"type": "table", "limit":
+      5, "searchQuery": "", "userTimeZone": "Asia/Bangkok", "userLocale": "en", "loadContent":
+      false}}, "loader": {"limit": 5}}'
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '535'
+      Content-Type:
+      - application/json
+      User-Agent:
+      - python-requests/2.33.0
+    method: POST
+    uri: https://app.notion.com/api/v3/queryCollection
+  response:
+    body:
+      string: '{"isNotionError":true,"errorId":"75165429-7a16-4a51-b4e7-d72183b0b983","name":"ValidationError","debugMessage":"Invalid
+        input.","message":"Something went wrong. (400)"}'
+    headers:
+      CF-Cache-Status:
+      - DYNAMIC
+      CF-Ray:
+      - a2d7c39aea1d90f2-SIN
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '168'
+      Content-Type:
+      - application/json; charset=utf-8
+      Date:
+      - Wed, 19 Aug 2026 08:24:49 GMT
+      ETag:
+      - W/"a8-Farmu7CT605iW9koolj1x++IWvU"
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - notion_browser_id=45b10d51-38cb-4711-8cca-2b76132366eb; Domain=.notion.com;
+        Path=/; Expires=Thu, 19 Aug 2027 08:24:49 GMT; Secure
+      - device_id=3c1d872b-594c-81a6-ac74-003b514f5ab9; Domain=app.notion.com; Path=/;
+        Expires=Thu, 19 Aug 2027 08:24:49 GMT; HttpOnly; Secure
+      - notion_check_cookie_consent=false; Domain=.notion.com; Path=/; Expires=Thu,
+        20 Aug 2026 08:24:49 GMT; Secure
+      - __cf_bm=HTXvZJqjGRfIU9uBUDy9suYv0.KtwG0_iHjp5EDk.kQ-1787127889.105259-1.0.1.1-dFZy.bWkYUUTryMcq7hvg03JXqsTp1J.pgp6S8wxw2hXUf64t0_YSxTPgrdpw6MjRRhLxC5RR393m5vwIC32F4cJ3W2u7sgbQj1szqny6zh0kRu4R6kk1pVeKuasXPii;
+        HttpOnly; SameSite=None; Secure; Path=/; Domain=notion.com; Expires=Wed, 19
+        Aug 2026 08:54:49 GMT
+      - _cfuvid=i.TXocqAjiHdMY6QphkIlg8vqZTXgm7QYegFTqRf9u8-1787127889.105259-1.0.1.1-._FPzYNPVUWezWl35Kyu0iBbn3gewfJkdgSImEYMY9Y;
+        HttpOnly; SameSite=None; Secure; Path=/; Domain=notion.com
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      Vary:
+      - Accept-Encoding
+      alt-svc:
+      - h3=":443"; ma=86400
+      content-security-policy:
+      - default-src 'none'
+      referrer-policy:
+      - strict-origin-when-cross-origin
+      server-timing:
+      - r;dur=619
+      x-content-type-options:
+      - nosniff
+      x-dns-prefetch-control:
+      - 'off'
+      x-download-options:
+      - noopen
+      x-frame-options:
+      - SAMEORIGIN
+      x-notion-request-id:
+      - 5af51867-203d-4a0b-83ad-fff460358103
+      x-permitted-cross-domain-policies:
+      - none
+      x-xss-protection:
+      - '0'
+    status:
+      code: 400
+      message: Bad Request
+version: 1

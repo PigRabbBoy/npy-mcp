@@ -1,0 +1,83 @@
+interactions:
+- request:
+    body: '{"requests": [{"table": "block", "id": "670bd233-7435-4dac-9f60-ba9cdb5a10e4"}]}'
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '80'
+      Content-Type:
+      - application/json
+      User-Agent:
+      - python-requests/2.33.0
+    method: POST
+    uri: https://app.notion.com/api/v3/getRecordValues
+  response:
+    body:
+      string: '{"isNotionError":true,"errorId":"624f278c-7826-43ab-92e6-d4c67489bf3d","name":"MemcachedCrossCellError","debugMessage":"Cross-cell
+        memcached access is not allowed","message":"Something went wrong. (500)"}'
+    headers:
+      CF-Cache-Status:
+      - DYNAMIC
+      CF-Ray:
+      - a2d7c395de231bd5-SIN
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '204'
+      Content-Type:
+      - application/json; charset=utf-8
+      Date:
+      - Wed, 19 Aug 2026 08:24:48 GMT
+      ETag:
+      - W/"cc-5cfBrx9z3DtLYIUovocuk52eg1U"
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - notion_browser_id=16a152b4-f46c-4027-8b46-25e8f174bdbf; Domain=.notion.com;
+        Path=/; Expires=Thu, 19 Aug 2027 08:24:48 GMT; Secure
+      - device_id=3c1d872b-594c-8117-a52d-003b019b159b; Domain=app.notion.com; Path=/;
+        Expires=Thu, 19 Aug 2027 08:24:48 GMT; HttpOnly; Secure
+      - notion_check_cookie_consent=false; Domain=.notion.com; Path=/; Expires=Thu,
+        20 Aug 2026 08:24:48 GMT; Secure
+      - __cf_bm=JCtYT7e.TY6a9ouDR4NLM03AZ2KBnP3.migk_2WDzEU-1787127888.2952068-1.0.1.1-gOl56Y9dzPrhEkDPwTfGyL7g6gAo2h_feEO8RdeiTdp6POw01oaDVGZnmAhIFvpC5HFdwL6K_vi12XYYHDj8CvTPfw8yug7HAf30rM1t5NDl3MeeWnfYvy_OnCsLgJHo;
+        HttpOnly; SameSite=None; Secure; Path=/; Domain=notion.com; Expires=Wed, 19
+        Aug 2026 08:54:48 GMT
+      - _cfuvid=AanHMdqmDzcax6fC.4h.PS3ros8eMgeXCHyBGdw8w8I-1787127888.2952068-1.0.1.1-Tln96oymtJJQSoPbm9XtM266BS2p1fVOWBi2vjFBW.A;
+        HttpOnly; SameSite=None; Secure; Path=/; Domain=notion.com
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      Vary:
+      - Accept-Encoding
+      alt-svc:
+      - h3=":443"; ma=86400
+      content-security-policy:
+      - default-src 'none'
+      referrer-policy:
+      - strict-origin-when-cross-origin
+      server-timing:
+      - r;dur=314
+      x-content-type-options:
+      - nosniff
+      x-dns-prefetch-control:
+      - 'off'
+      x-download-options:
+      - noopen
+      x-frame-options:
+      - SAMEORIGIN
+      x-notion-request-id:
+      - d9b0acd4-91cf-4fdd-93fb-f0a0cf91347b
+      x-notion-user-id:
+      - 487f0c95-5319-4abf-9b80-5a5255959ce5
+      x-permitted-cross-domain-policies:
+      - none
+      x-xss-protection:
+      - '0'
+    status:
+      code: 500
+      message: Internal Server Error
+version: 1

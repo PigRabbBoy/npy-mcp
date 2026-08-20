@@ -1,0 +1,13 @@
+.git
+.serena
+tests
+docs
+*.egg-info
+__pycache__
+dist
+.venv
+.claude
+.env
+*.gif
+*.png
+*.jpg

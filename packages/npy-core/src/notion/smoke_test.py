@@ -201,12 +201,10 @@ def run_live_smoke_test(token_v2, parent_page_url_or_id):
     assert row1.some_date.timezone == timezone
     assert row1.some_date.reminder == reminder
 
+    # skip interactive prompt for non-interactive runs; auto-delete after a short delay
     try:
-        print(
-            "Check it out and make sure it looks good, then press any key here to delete it..."
-        )
-        input()
-    except EOFError:
+        time.sleep(3)
+    except Exception:
         pass
 
     _delete_page_fully(page)
