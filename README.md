@@ -13,7 +13,7 @@ logged-in Notion browser session.
 
 ```bash
 # Install (from source)
-git clone https://github.com/pigrabb/notion-py.git
+git clone https://github.com/PigRabbBoy/notion-py.git
 cd notion-py
 uv sync
 
@@ -72,8 +72,120 @@ notion auth use-space <SPACE_ID>
 
 ## MCP server
 
-### Local (stdio) — for Claude Desktop
+### Local (stdio)
 
+Three ways to run the MCP server locally over stdio. Pick one based on your setup.
+
+#### Option 1: `uvx` (recommended — no install needed)
+
+Install [uv](https://docs.astral.sh/uv/) once:
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
+```json
+{
+  "mcpServers": {
+    "notion-py": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/PigRabbBoy/notion-py", "notion-mcp"],
+      "env": {
+        "NOTION_TOKEN_V2": "v03%3AeyJ..."
+      }
+    }
+  }
+}
+```
+
+**Cursor** (`.cursor/mcp.json` in project root):
+```json
+{
+  "mcpServers": {
+    "notion-py": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/PigRabbBoy/notion-py", "notion-mcp"],
+      "env": {
+        "NOTION_TOKEN_V2": "v03%3AeyJ..."
+      }
+    }
+  }
+}
+```
+
+**VS Code** (`.vscode/mcp.json` in project root):
+```json
+{
+  "servers": {
+    "notion-py": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/PigRabbBoy/notion-py", "notion-mcp"],
+      "env": {
+        "NOTION_TOKEN_V2": "v03%3AeyJ..."
+      }
+    }
+  }
+}
+```
+
+#### Option 2: Docker (no Python needed)
+
+Pull the image and run via stdio. No Python or uv installation required.
+
+**Claude Desktop:**
+```json
+{
+  "mcpServers": {
+    "notion-py": {
+      "command": "docker",
+      "args": ["run", "--rm", "-i", "-e", "NOTION_TOKEN_V2", "pigrabbboy/npy-mcp:latest", "--transport", "stdio"],
+      "env": {
+        "NOTION_TOKEN_V2": "v03%3AeyJ..."
+      }
+    }
+  }
+}
+```
+
+**Cursor** (`.cursor/mcp.json`):
+```json
+{
+  "mcpServers": {
+    "notion-py": {
+      "command": "docker",
+      "args": ["run", "--rm", "-i", "-e", "NOTION_TOKEN_V2", "pigrabbboy/npy-mcp:latest", "--transport", "stdio"],
+      "env": {
+        "NOTION_TOKEN_V2": "v03%3AeyJ..."
+      }
+    }
+  }
+}
+```
+
+**VS Code** (`.vscode/mcp.json`):
+```json
+{
+  "servers": {
+    "notion-py": {
+      "type": "stdio",
+      "command": "docker",
+      "args": ["run", "--rm", "-i", "-e", "NOTION_TOKEN_V2", "pigrabbboy/npy-mcp:latest", "--transport", "stdio"],
+      "env": {
+        "NOTION_TOKEN_V2": "v03%3AeyJ..."
+      }
+    }
+  }
+}
+```
+
+#### Option 3: pip install (for developers with Python)
+
+```bash
+pip install git+https://github.com/PigRabbBoy/notion-py
+```
+
+**Claude Desktop:**
 ```json
 {
   "mcpServers": {
@@ -81,12 +193,47 @@ notion auth use-space <SPACE_ID>
       "command": "python",
       "args": ["-m", "notion_mcp"],
       "env": {
-        "NOTION_TOKEN_V2": "your-token_v2-here"
+        "NOTION_TOKEN_V2": "v03%3AeyJ..."
       }
     }
   }
 }
 ```
+
+**Cursor** (`.cursor/mcp.json`):
+```json
+{
+  "mcpServers": {
+    "notion-py": {
+      "command": "python",
+      "args": ["-m", "notion_mcp"],
+      "env": {
+        "NOTION_TOKEN_V2": "v03%3AeyJ..."
+      }
+    }
+  }
+}
+```
+
+**VS Code** (`.vscode/mcp.json`):
+```json
+{
+  "servers": {
+    "notion-py": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-m", "notion_mcp"],
+      "env": {
+        "NOTION_TOKEN_V2": "v03%3AeyJ..."
+      }
+    }
+  }
+}
+```
+
+#### Enabling write tools (stdio)
+
+Add `"NOTION_ALLOW_WRITE": "1"` to the `env` block in any of the configs above to unlock 9 write tools (create, update, delete, move, etc.). Without it, only 6 read tools are available.
 
 ### Remote (HTTP) — for shared/team access
 
