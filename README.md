@@ -13,7 +13,7 @@ logged-in Notion browser session.
 
 ```bash
 # Install (from source)
-git clone https://github.com/PigRabbBoy/notion-py.git
+git clone https://github.com/PigRabbBoy/npy-mcp.git
 cd notion-py
 uv sync
 
@@ -89,7 +89,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
   "mcpServers": {
     "notion-py": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/PigRabbBoy/notion-py", "notion-mcp"],
+      "args": ["--from", "git+https://github.com/PigRabbBoy/npy-mcp", "notion-mcp"],
       "env": {
         "NOTION_TOKEN_V2": "v03%3AeyJ..."
       }
@@ -104,7 +104,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
   "mcpServers": {
     "notion-py": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/PigRabbBoy/notion-py", "notion-mcp"],
+      "args": ["--from", "git+https://github.com/PigRabbBoy/npy-mcp", "notion-mcp"],
       "env": {
         "NOTION_TOKEN_V2": "v03%3AeyJ..."
       }
@@ -120,7 +120,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
     "notion-py": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/PigRabbBoy/notion-py", "notion-mcp"],
+      "args": ["--from", "git+https://github.com/PigRabbBoy/npy-mcp", "notion-mcp"],
       "env": {
         "NOTION_TOKEN_V2": "v03%3AeyJ..."
       }
@@ -182,7 +182,7 @@ Pull the image and run via stdio. No Python or uv installation required.
 #### Option 3: pip install (for developers with Python)
 
 ```bash
-pip install git+https://github.com/PigRabbBoy/notion-py
+pip install git+https://github.com/PigRabbBoy/npy-mcp
 ```
 
 **Claude Desktop:**
