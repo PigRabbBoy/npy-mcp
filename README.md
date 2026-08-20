@@ -466,13 +466,23 @@ space_id = "1b6d9f59-d372-43b7-8cfc-332e473b1f2c"
 
 ### How to find your space ID
 
+**Method 1 — CLI (easiest):**
 ```bash
-# Run with just the token — lists all spaces with IDs
 python -m notion_cli auth spaces
 ```
+Lists every space your token can access, with ID + name. The `*` marks the current one.
 
-Or look at the URL in Notion: open any page, the space ID is not in the URL,
-but `auth spaces` will list all of them.
+**Method 2 — Browser DevTools:**
+1. Open https://app.notion.com in Chrome (logged in)
+2. F12 → **Network** tab
+3. Click any page in Notion
+4. Look for a request to `api/v3/loadUserContent` or `getPublicSpaceData`
+5. In the response, find `"space": {"<space-id>": {...}}` — the key is your space ID
+
+**Method 3 — Notion URL (indirect):**
+The page URL contains the **page ID**, not the space ID. But the first page you see after login belongs to your default space. Use Method 1 to get the actual space ID.
+
+> Space IDs look like UUIDs: `1b6d9f59-d372-43b7-8cfc-332e473b1f2c`
 
 ## Development
 
