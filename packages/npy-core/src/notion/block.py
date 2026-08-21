@@ -932,6 +932,79 @@ class CalloutBlock(BasicBlock):
     _type = "callout"
 
 
+class SubsubsubheaderBlock(BasicBlock):
+
+    _type = "sub_sub_sub_header"
+
+
+class SyncedBlock(Block):
+    """A block whose content is synced from a source block."""
+
+    _type = "synced_block"
+
+
+class SimpleTableBlock(Block):
+    """A simple table block (not a database/collection)."""
+
+    _type = "simple_table"
+
+
+class TableOfContentsBlock(BasicBlock):
+
+    _type = "table_of_contents"
+
+
+class LinkToPageBlock(BasicBlock):
+
+    _type = "link_to_page"
+
+
+class HtmlBlock(EmbedBlock):
+
+    _type = "html"
+
+
+class MiroBlock(EmbedBlock):
+
+    _type = "miro"
+
+
+class ExcalidrawBlock(EmbedBlock):
+
+    _type = "excalidraw"
+
+
+class ReplitBlock(EmbedBlock):
+
+    _type = "replit"
+
+
+class DeepnoteBlock(EmbedBlock):
+
+    _type = "deepnote"
+
+
+class SketchBlock(EmbedBlock):
+
+    _type = "sketch"
+
+
+class AbstractBlock(EmbedBlock):
+
+    _type = "abstract"
+
+
+class MixpanelBlock(EmbedBlock):
+
+    _type = "mixpanel"
+
+
+class PdfExcalidrawBlock(EmbedBlock):
+    """Placeholder — PDF embed variant."""
+
+    _type = "pdf_embed"
+
+
 BLOCK_TYPES = {
     cls._type: cls
     for cls in locals().values()

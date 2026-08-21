@@ -82,3 +82,26 @@ class TestToolSchemas:
             schema = page_tool.input_schema
             assert "page_id" in schema.get("properties", {})
             assert "depth" in schema.get("properties", {})
+
+
+class TestBlockTypes:
+    def test_block_types_registered(self):
+        """Verify all expected block type classes are registered."""
+        from notion.block import BLOCK_TYPES
+        expected = [
+            "text", "to_do", "header", "sub_header", "sub_sub_header",
+            "sub_sub_sub_header", "bulleted_list", "numbered_list", "toggle",
+            "quote", "code", "callout", "divider", "equation",
+            "image", "video", "audio", "file", "pdf",
+            "embed", "bookmark", "tweet", "gist", "figma", "loom",
+            "typeform", "codepen", "maps", "invision", "framer",
+            "html", "miro", "excalidraw", "replit", "deepnote",
+            "sketch", "abstract", "mixpanel",
+            "column", "column_list", "synced_block",
+            "breadcrumb", "factory", "link_to_collection", "link_to_page",
+            "table_of_contents", "simple_table",
+            "page", "collection_view", "collection_view_page",
+        ]
+        for t in expected:
+            assert t in BLOCK_TYPES, f"Block type '{t}' not registered"
+        assert len(BLOCK_TYPES) >= 50
