@@ -102,13 +102,17 @@ def _block_summary(block) -> dict:
     except Exception:
         pass
     icon = block.get("format.page_icon") or ""
+    btype = block.get("type", "") or ""
     # Strip icon from title to avoid noise (icon is separate field)
     title = block.title_plaintext if hasattr(block, "title_plaintext") else None
     if title and icon and title.startswith(icon):
         title = title[len(icon):].strip()
+    # For collection_view/collection_view_page, use DB name if title is empty
+    if not title and btype in ("collection_view", "collection_view_page"):
+        title = _get_inline_db_name(block) or ""
     return {
         "id": block.id,
-        "type": block.get("type"),
+        "type": btype,
         "title": title,
         "url": url,
         "icon": icon,
@@ -191,13 +195,60 @@ def _render_row_props(row, schema_names: dict[str, str] | None = None) -> list[s
     return parts
 
 
+def _get_inline_db_name(block) -> str:
+    """Try to resolve an inline database's name from a collection_view block.
+
+    The collection may not be lazily loaded on the block itself, so we look it
+    up via the view_ids → collection_view record → collection_pointer → collection.
+    """
+    col = getattr(block, "collection", None)
+    if col is not None and hasattr(col, "name") and col.name:
+        return col.name
+    # Fallback: resolve via view_ids → collection_view → collection_pointer
+    view_ids = block.get("view_ids") or []
+    for vid in view_ids:
+        cv_data = block._client._store._values.get("collection_view", {}).get(vid)
+        if cv_data:
+            ptr = cv_data.get("format", {}).get("collection_pointer", {})
+            col_id = ptr.get("id")
+            if col_id:
+                col_data = block._client._store._values.get("collection", {}).get(col_id)
+                if col_data:
+                    # Collection name is stored as Notion rich-text array, not plain string
+                    name_raw = col_data.get("name") or col_data.get("title")
+                    if name_raw:
+                        # Parse Notion rich-text: [["text", [["b"]]], ...] → "text"
+                        try:
+                            parts = []
+                            for segment in name_raw:
+                                if isinstance(segment, list) and segment:
+                                    parts.append(str(segment[0]))
+                                elif isinstance(segment, str):
+                                    parts.append(segment)
+                            return "".join(parts)
+                        except Exception:
+                            return str(name_raw)
+                # Try loading the collection
+                try:
+                    col_obj = block._client.get_collection(col_id)
+                    if col_obj and col_obj.name:
+                        return col_obj.name
+                except Exception:
+                    pass
+    return ""
+
+
 def _block_to_markdown(block) -> str:
     """Convert a single block to markdown text."""
+    btype = block.get("type", "") or ""
+    # Inline database — emit a stub so it's not silently skipped
+    if btype in ("collection_view", "collection_view_page"):
+        db_name = _get_inline_db_name(block) or "(unnamed)"
+        return f"[inline database] {db_name} — use get_database(\"{block.id}\")"
     try:
         md = block.title_plaintext
     except Exception:
         md = ""
-    btype = block.get("type", "") or ""
     if btype == "header":
         return f"# {md}"
     if btype == "sub_header":
