@@ -850,8 +850,34 @@ def query_database(
 _WRITE_ENABLED = os.environ.get("NOTION_ALLOW_WRITE") == "1"
 
 
+def _build_collection_schema(col_specs: list) -> dict:
+    """Build a Notion collection schema from column specs.
+
+    Each spec: {"name": str, "type": str, "options": [str, ...]}
+    Returns: {prop_id: {"name": str, "type": str, "options": [...]}}
+    """
+    import uuid
+    schema = {}
+    for spec in col_specs:
+        name = spec.get("name", "Untitled")
+        ptype = spec.get("type", "text")
+        prop_id = spec.get("id") or uuid.uuid4().hex[:4]
+        prop = {"name": name, "type": ptype}
+        if ptype in ("select", "multi_select", "status") and spec.get("options"):
+            prop["options"] = [
+                {"value": o, "color": "default"} for o in spec["options"]
+            ]
+        schema[prop_id] = prop
+    return schema
+
+
 if _WRITE_ENABLED:
-    from notion.block import PageBlock, TextBlock, TodoBlock, HeaderBlock, SubheaderBlock, CalloutBlock, BulletedListBlock, NumberedListBlock, QuoteBlock, CodeBlock, DividerBlock
+    from notion.block import (
+        PageBlock, TextBlock, TodoBlock, HeaderBlock, SubheaderBlock,
+        CalloutBlock, BulletedListBlock, NumberedListBlock, QuoteBlock,
+        CodeBlock, DividerBlock, CollectionViewBlock, CollectionViewPageBlock,
+    )
+    from notion.collection import Collection
 
     @mcp.tool()
     def create_page(
@@ -1102,3 +1128,106 @@ if _WRITE_ENABLED:
         except TypeError:
             row.remove()
         return f"Deleted row {row_id}"
+
+    @mcp.tool()
+    def create_database(
+        parent_id: str,
+        title: str,
+        columns: str = "",
+        icon: str = "",
+    ) -> str:
+        """Create a new database (collection) under a parent page.
+
+        Creates an inline database (collection_view block) embedded within
+        the parent page. The database has a default table view.
+
+        Args:
+            parent_id: Parent page URL or ID
+            title: Database title
+            columns: Optional JSON array of column definitions, e.g.
+                [{"name":"Status","type":"select","options":["Todo","Done"]},
+                 {"name":"Priority","type":"select","options":["High","Low"]}]
+                Supported types: title, text, number, select, multi_select,
+                date, person, checkbox, url, email, phone_number, file, relation.
+                If omitted, creates a database with a single "Name" title column.
+            icon: Optional emoji icon
+
+        Returns:
+            Database block ID (use with get_database, query_database, add_database_row).
+        """
+        client = _get_client()
+        parent = client.get_block(parent_id)
+        if parent is None:
+            return f"Parent not found: {parent_id}"
+
+        # Build schema from columns spec
+        if columns:
+            col_specs = json.loads(columns)
+            schema = _build_collection_schema(col_specs)
+        else:
+            schema = {"title": {"name": "Name", "type": "title"}}
+
+        # Create inline database (CollectionViewBlock as child)
+        cvb = parent.children.add_new(CollectionViewBlock)
+        collection_id = client.create_record(
+            "collection", parent=cvb, schema=schema
+        )
+        cvb.collection = client.get_collection(collection_id)
+        cvb.title = title
+        if icon:
+            cvb.icon = icon
+
+        # Add a default table view
+        cvb.views.add_new(view_type="table")
+        return cvb.id
+
+    @mcp.tool()
+    def add_column(
+        database_id: str,
+        name: str,
+        type: str,
+        options: str = "",
+    ) -> str:
+        """Add a column to an existing database.
+
+        Args:
+            database_id: Database URL or ID
+            name: Column name
+            type: Column type (title, text, number, select, multi_select,
+                date, person, checkbox, url, email, phone_number, file,
+                relation, created_time, last_edited_time, created_by,
+                last_edited_by, status)
+            options: For select/multi_select/status: JSON array of option
+                values, e.g. ["High","Medium","Low"]
+
+        Returns:
+            Confirmation message with the new column's property ID.
+        """
+        import uuid
+        client = _get_client()
+
+        # Get the collection
+        block = client.get_block(database_id)
+        collection = None
+        if block is not None:
+            collection = getattr(block, "collection", None)
+        if collection is None:
+            try:
+                collection = client.get_collection(database_id)
+            except Exception:
+                pass
+        if collection is None:
+            return f"Database not found: {database_id}"
+
+        # Build the new property
+        prop_id = uuid.uuid4().hex[:4]
+        prop = {"name": name, "type": type}
+        if type in ("select", "multi_select", "status") and options:
+            opts = json.loads(options)
+            prop["options"] = [{"value": o, "color": "default"} for o in opts]
+
+        # Add to schema
+        current_schema = collection.get("schema") or {}
+        current_schema[prop_id] = prop
+        collection.set("schema", current_schema)
+        return f"Added column '{name}' (type: {type}, id: {prop_id}) to database"
