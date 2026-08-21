@@ -1,6 +1,6 @@
 [project]
 name = "notion-py"
-version = "0.2.7"
+version = "0.2.8"
 description = "Cookie-based Notion client: core lib + CLI + MCP server"
 requires-python = ">=3.12"
 

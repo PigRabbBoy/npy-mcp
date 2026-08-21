@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-08-21
+
+### Fixed
+- Image blocks now emit `[image] <source>` instead of being silently skipped in `get_page`
+- Embed/video/file/audio/pdf blocks emit `[type] <source>` markers
+- Simple tables (`type=table`) render as markdown table from children
+- `collection_view` blocks with lazy-loaded collections now resolve via `view_ids → collection_view record → collection_pointer → get_collection()` — previously showed `(no collection)` or crashed
+- `get_database` and `query_database` no longer crash on lazy-loaded collections (`'NoneType' object has no attribute 'items'`)
+- `get_database` returns helpful error message for blocks without collections (was raw Python error)
+- Bookmark/figma/tweet/gist/drive/loom/typeform/codepen/maps/invision/framer blocks emit `[type] <source>` markers
+
 ## [0.2.7] - 2026-08-21
 
 ### Fixed
