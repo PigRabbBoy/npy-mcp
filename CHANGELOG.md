@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-08-21
+
+### Fixed
+- `get_page` now emits `[inline database] <name> — use get_database("<id>")` stubs for `collection_view`/`collection_view_page` blocks — previously silently skipped, making pages with inline DBs appear empty
+- `search` and `list_pages` now show DB name for `collection_view` blocks instead of empty title
+- `_get_inline_db_name()` resolves DB name via `view_ids → collection_view record → collection_pointer → collection` (handles lazy-loaded collections where `.collection` is None)
+- Collection name parsed from Notion rich-text format to plain text
+
 ## [0.2.6] - 2026-08-20
 
 ### Added
