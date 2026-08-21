@@ -139,3 +139,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - No more silent data loss: column_list, column, synced_block, breadcrumb, factory, link_to_collection, link_to_page now render instead of returning empty string
+
+## [0.4.1] - 2026-08-21
+
+### Added
+- `create_database` tool — creates inline database with optional full schema. Supports all property types (title, text, number, select, multi_select, date, person, checkbox, url, email, phone_number, file, relation).
+- `add_column` tool — adds a column to an existing database. Supports all property types including status.
+- `status` property type — handled as alias of select in collection.py for both read and write.
+- 18 total tools (7 read + 11 write).
