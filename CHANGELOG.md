@@ -119,3 +119,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New `get_image(block_id)` read tool — downloads image blocks through the server's authenticated session and returns base64 data URI (`data:<mime>;base64,<data>`). Agent can read Notion images directly without needing cookie auth.
 - Image marker in `get_page` now shows `use get_image("<block_id>") to download` instead of dead proxy URL
 - 7 read tools + 9 write tools = 16 total (was 15)
+
+## [0.3.1] - 2026-08-21
+
+### Fixed
+- `get_image` now returns MCP `ImageContent` (native image block) instead of base64 text — client renders as image (~157 tokens) not text (~37k tokens). Fixes "result exceeds maximum allowed tokens" error.
+- Uses `mcp.server.mcpserver.Image(data=bytes, format=fmt)` with `structured_output=False`
