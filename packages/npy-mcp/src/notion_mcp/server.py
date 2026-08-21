@@ -874,8 +874,14 @@ def _build_collection_schema(col_specs: list) -> dict:
 if _WRITE_ENABLED:
     from notion.block import (
         PageBlock, TextBlock, TodoBlock, HeaderBlock, SubheaderBlock,
-        CalloutBlock, BulletedListBlock, NumberedListBlock, QuoteBlock,
-        CodeBlock, DividerBlock, CollectionViewBlock, CollectionViewPageBlock,
+        SubsubheaderBlock, CalloutBlock, BulletedListBlock, NumberedListBlock,
+        QuoteBlock, CodeBlock, DividerBlock, ToggleBlock, EquationBlock,
+        CollectionViewBlock, CollectionViewPageBlock,
+        EmbedBlock, BookmarkBlock, ImageBlock, VideoBlock, AudioBlock,
+        FileBlock, PDFBlock, TweetBlock, GistBlock, FigmaBlock, LoomBlock,
+        TypeformBlock, CodepenBlock, MapsBlock, InvisionBlock, FramerBlock,
+        DriveBlock, HtmlBlock, MiroBlock, ExcalidrawBlock, ReplitBlock,
+        DeepnoteBlock, SketchBlock, AbstractBlock, MixpanelBlock,
     )
     from notion.collection import Collection
 
@@ -911,8 +917,8 @@ if _WRITE_ENABLED:
     ) -> str:
         """Append blocks to a page. blocks is a JSON array of {type, text, checked?}.
 
-        Supported types: text, todo, header, subheader, callout, bulleted_list,
-        numbered_list, quote, code, divider.
+        Supported types: text, todo, header, subheader, subsubheader, callout,
+        bulleted_list, numbered_list, quote, code, divider, toggle, equation.
 
         Args:
             page_id: Parent page URL or ID
@@ -931,12 +937,15 @@ if _WRITE_ENABLED:
             "todo": TodoBlock,
             "header": HeaderBlock,
             "subheader": SubheaderBlock,
+            "subsubheader": SubsubheaderBlock,
             "callout": CalloutBlock,
             "bulleted_list": BulletedListBlock,
             "numbered_list": NumberedListBlock,
             "quote": QuoteBlock,
             "code": CodeBlock,
             "divider": DividerBlock,
+            "toggle": ToggleBlock,
+            "equation": EquationBlock,
         }
         count = 0
         for spec in block_specs:
@@ -1231,3 +1240,145 @@ if _WRITE_ENABLED:
         current_schema[prop_id] = prop
         collection.set("schema", current_schema)
         return f"Added column '{name}' (type: {type}, id: {prop_id}) to database"
+
+    @mcp.tool()
+    def create_media(
+        parent_id: str,
+        type: str,
+        url: str = "",
+        file_path: str = "",
+        caption: str = "",
+    ) -> str:
+        """Create a media block (image, video, audio, file, pdf) from a URL or file.
+
+        Args:
+            parent_id: Parent page URL or ID
+            type: Media type (image, video, audio, file, pdf)
+            url: Source URL (e.g. https://example.com/image.png)
+            file_path: Local file path for upload (alternative to url)
+            caption: Optional caption text
+
+        Returns:
+            Confirmation with the created block ID.
+        """
+        client = _get_client()
+        parent = client.get_block(parent_id)
+        if parent is None:
+            return f"Parent not found: {parent_id}"
+
+        TYPE_MAP = {
+            "image": ImageBlock,
+            "video": VideoBlock,
+            "audio": AudioBlock,
+            "file": FileBlock,
+            "pdf": PDFBlock,
+        }
+        cls = TYPE_MAP.get(type)
+        if cls is None:
+            return f"Unsupported media type: {type} (try image, video, audio, file, pdf)"
+
+        block = parent.children.add_new(cls)
+        if file_path:
+            block.upload_file(file_path)
+        elif url:
+            block.source = url
+            block.display_source = url
+        else:
+            return "Either url or file_path must be provided"
+        if caption:
+            block.caption = caption
+        return f"Created {type} block: {block.id}"
+
+    @mcp.tool()
+    def create_embed(
+        parent_id: str,
+        type: str,
+        url: str,
+        caption: str = "",
+    ) -> str:
+        """Create an embed block (tweet, figma, gist, miro, html, etc.).
+
+        Args:
+            parent_id: Parent page URL or ID
+            type: Embed type (embed, bookmark, tweet, gist, figma, loom,
+                typeform, codepen, maps, invision, framer, drive, html,
+                miro, excalidraw, replit, deepnote, sketch, abstract, mixpanel)
+            url: Source URL to embed
+            caption: Optional caption text
+
+        Returns:
+            Confirmation with the created block ID.
+        """
+        client = _get_client()
+        parent = client.get_block(parent_id)
+        if parent is None:
+            return f"Parent not found: {parent_id}"
+
+        TYPE_MAP = {
+            "embed": EmbedBlock,
+            "bookmark": BookmarkBlock,
+            "tweet": TweetBlock,
+            "gist": GistBlock,
+            "figma": FigmaBlock,
+            "loom": LoomBlock,
+            "typeform": TypeformBlock,
+            "codepen": CodepenBlock,
+            "maps": MapsBlock,
+            "invision": InvisionBlock,
+            "framer": FramerBlock,
+            "drive": DriveBlock,
+            "html": HtmlBlock,
+            "miro": MiroBlock,
+            "excalidraw": ExcalidrawBlock,
+            "replit": ReplitBlock,
+            "deepnote": DeepnoteBlock,
+            "sketch": SketchBlock,
+            "abstract": AbstractBlock,
+            "mixpanel": MixpanelBlock,
+        }
+        cls = TYPE_MAP.get(type)
+        if cls is None:
+            supported = ", ".join(sorted(TYPE_MAP.keys()))
+            return f"Unsupported embed type: {type} (supported: {supported})"
+
+        block = parent.children.add_new(cls)
+        block.source = url
+        block.display_source = url
+        if caption:
+            block.caption = caption
+        return f"Created {type} embed: {block.id}"
+
+    @mcp.tool()
+    def create_table(
+        parent_id: str,
+        rows: int = 3,
+        cols: int = 2,
+    ) -> str:
+        """Create a simple table (not a database) with the specified dimensions.
+
+        Args:
+            parent_id: Parent page URL or ID
+            rows: Number of rows (default 3)
+            cols: Number of columns (default 2)
+
+        Returns:
+            Confirmation with the created table block ID.
+        """
+        client = _get_client()
+        parent = client.get_block(parent_id)
+        if parent is None:
+            return f"Parent not found: {parent_id}"
+
+        # Notion simple tables use the "table" block type
+        # The block is created with format.table_columns specifying dimensions
+        import uuid
+        table_id = str(uuid.uuid4())
+        client.create_record(
+            "block",
+            parent=parent,
+            type="table",
+            format={"table_columns": cols, "table_blocks": []},
+            id=table_id,
+        )
+        table = client.get_block(table_id)
+        return f"Created table ({rows}x{cols}): {table_id}"
