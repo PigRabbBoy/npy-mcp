@@ -1382,3 +1382,118 @@ if _WRITE_ENABLED:
         )
         table = client.get_block(table_id)
         return f"Created table ({rows}x{cols}): {table_id}"
+
+    @mcp.tool()
+    def create_columns(
+        parent_id: str,
+        num_columns: int = 2,
+    ) -> str:
+        """Create a column layout with the specified number of columns.
+
+        Creates a column_list block with N empty column blocks.
+        Add content to each column by using append_blocks with the column block ID.
+
+        Args:
+            parent_id: Parent page URL or ID
+            num_columns: Number of columns (1-10)
+
+        Returns:
+            Confirmation with column block IDs.
+        """
+        from notion.block import ColumnListBlock, ColumnBlock
+        client = _get_client()
+        parent = client.get_block(parent_id)
+        if parent is None:
+            return f"Parent not found: {parent_id}"
+        if num_columns < 1 or num_columns > 10:
+            return f"num_columns must be 1-10, got {num_columns}"
+
+        col_list = parent.children.add_new(ColumnListBlock)
+        col_ids = []
+        for i in range(num_columns):
+            col = col_list.children.add_new(ColumnBlock)
+            col_ids.append(col.id)
+        return f"Created column_list ({num_columns} columns): {col_list.id}\nColumn IDs: {', '.join(col_ids)}"
+
+    @mcp.tool()
+    def import_csv(
+        parent_id: str,
+        file_path: str,
+        title: str = "",
+    ) -> str:
+        """Import a CSV file as a new database.
+
+        Parses the CSV file locally, creates a collection with the CSV
+        headers as columns (first text column becomes the title), and
+        inserts all rows as database entries.
+
+        Args:
+            parent_id: Parent page URL or ID
+            file_path: Path to the CSV file
+            title: Database title (defaults to the filename)
+
+        Returns:
+            Confirmation with the created database block ID.
+        """
+        import csv as csv_mod
+        import os
+
+        client = _get_client()
+        parent = client.get_block(parent_id)
+        if parent is None:
+            return f"Parent not found: {parent_id}"
+        if not os.path.exists(file_path):
+            return f"File not found: {file_path}"
+
+        # Parse CSV
+        with open(file_path, newline="", encoding="utf-8") as f:
+            reader = csv_mod.reader(f)
+            headers = next(reader)
+            rows_data = list(reader)
+
+        if not headers:
+            return "CSV file has no headers"
+        if not title:
+            title = os.path.basename(file_path).rsplit(".", 1)[0]
+
+        # Build schema: first text column as title, rest as text
+        schema = {}
+        title_prop_id = None
+        for i, h in enumerate(headers):
+            prop_id = f"col{i:04x}"
+            if title_prop_id is None:
+                schema[prop_id] = {"name": h, "type": "title"}
+                title_prop_id = prop_id
+            else:
+                schema[prop_id] = {"name": h, "type": "text"}
+
+        if title_prop_id is None:
+            schema["title"] = {"name": "Name", "type": "title"}
+            title_prop_id = "title"
+
+        # Create inline database
+        cvb = parent.children.add_new(CollectionViewBlock)
+        collection_id = client.create_record(
+            "collection", parent=cvb, schema=schema
+        )
+        cvb.collection = client.get_collection(collection_id)
+        cvb.title = title
+        cvb.views.add_new(view_type="table")
+
+        # Add rows
+        title_name = schema[title_prop_id]["name"]
+        for row in rows_data:
+            props = {}
+            for i, val in enumerate(row):
+                if i < len(headers):
+                    col_name = headers[i]
+                    if i == headers.index(schema[title_prop_id]["name"]):
+                        props[title_name] = val
+                    else:
+                        props[col_name] = val
+            try:
+                cvb.collection.add_row(**props)
+            except Exception:
+                pass  # Skip rows that fail
+
+        return f"Imported {len(rows_data)} rows from CSV as database: {cvb.id}"

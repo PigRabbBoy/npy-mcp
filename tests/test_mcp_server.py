@@ -48,7 +48,7 @@ class TestToolRegistration:
 class TestWriteGate:
     @pytest.mark.asyncio
     async def test_write_tools_when_enabled(self, monkeypatch):
-        """With NOTION_ALLOW_WRITE=1, all 21 tools should be registered."""
+        """With NOTION_ALLOW_WRITE=1, all 23 tools should be registered."""
         monkeypatch.setenv("NOTION_TOKEN_V2", "test-token")
         monkeypatch.setenv("NOTION_ALLOW_WRITE", "1")
         import importlib
@@ -58,7 +58,7 @@ class TestWriteGate:
         async with Client(mcp) as client:
             result = await client.list_tools()
             tool_names = [t.name for t in result.tools]
-            assert len(result.tools) == 21
+            assert len(result.tools) == 23
             assert "create_page" in tool_names
             assert "delete_block" in tool_names
             assert "add_database_row" in tool_names
@@ -67,6 +67,8 @@ class TestWriteGate:
             assert "create_media" in tool_names
             assert "create_embed" in tool_names
             assert "create_table" in tool_names
+            assert "create_columns" in tool_names
+            assert "import_csv" in tool_names
 
 
 class TestToolSchemas:
