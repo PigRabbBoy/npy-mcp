@@ -182,3 +182,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `create_media` file upload: now uses `getUploadSpaceFileUrl` endpoint with `record:{table:'block',id,spaceId}` in request body. Reads `putHeaders` from response and sends `x-amz-tagging` header with S3 PUT (was causing 403 Forbidden). Verified: upload PNG → get_image downloads it back successfully.
+
+## [0.5.3] - 2026-08-21
+
+### Fixed
+- Column children now render at depth=2 (was requiring depth≥4). Container blocks (column_list, column, synced_block) no longer consume a depth level — they pass depth through to children. Verified: `get_page(depth=2)` shows column headers + children content.
