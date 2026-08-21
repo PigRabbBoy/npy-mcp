@@ -1,6 +1,6 @@
 # Notion MCP — Full Tool Reference
 
-## Read tools (6 — always available)
+## Read tools (7 — always available)
 
 ### `search`
 
@@ -299,13 +299,149 @@ Delete a database row.
 
 ---
 
+### `create_database`
+
+Create a new database (collection) under a parent page.
+
+| Arg | Type | Default | Description |
+|---|---|---|---|
+| `parent_id` | string | — | Parent page URL or ID (required) |
+| `title` | string | — | Database title (required) |
+| `columns` | string | "" | JSON array of column specs (optional) |
+| `icon` | string | "" | Emoji icon (optional) |
+| `full_page` | bool | false | If true, creates full-page database |
+
+**Column spec format:**
+```json
+[
+  {"name": "Status", "type": "select", "options": ["Todo", "Done"]},
+  {"name": "Priority", "type": "select", "options": ["High", "Low"]},
+  {"name": "Done", "type": "checkbox"}
+]
+```
+
+**Supported column types:** title, text, number, select, multi_select, date, person, checkbox, url, email, phone_number, file, relation, status.
+
+**Example call:**
+```json
+{"parent_id": "page-id", "title": "Tasks", "columns": "[{\"name\":\"Task\",\"type\":\"title\"},{\"name\":\"Status\",\"type\":\"select\",\"options\":[\"Todo\",\"Done\"]}]"}
+```
+
+**Returns:** Database block ID.
+
+---
+
+### `add_column`
+
+Add a column to an existing database.
+
+| Arg | Type | Default | Description |
+|---|---|---|---|
+| `database_id` | string | — | Database URL or ID (required) |
+| `name` | string | — | Column name (required) |
+| `type` | string | — | Column type (required) |
+| `options` | string | "" | For select/multi_select/status: JSON array of options |
+
+**Example call:**
+```json
+{"database_id": "db-id", "name": "Due Date", "type": "date"}
+```
+
+**Returns:** Confirmation message with new column ID.
+
+---
+
+### `create_media`
+
+Create a media block (image, video, audio, file, pdf) from URL or file upload.
+
+| Arg | Type | Default | Description |
+|---|---|---|---|
+| `parent_id` | string | — | Parent page URL or ID (required) |
+| `type` | string | — | Media type: image, video, audio, file, pdf (required) |
+| `url` | string | "" | Source URL |
+| `file_path` | string | "" | Local file path for upload |
+| `caption` | string | "" | Optional caption |
+
+**Example call:**
+```json
+{"parent_id": "page-id", "type": "image", "url": "https://example.com/cat.png"}
+```
+
+**Returns:** Confirmation with created block ID.
+
+---
+
+### `create_embed`
+
+Create an embed block (tweet, figma, gist, miro, html, etc.).
+
+| Arg | Type | Default | Description |
+|---|---|---|---|
+| `parent_id` | string | — | Parent page URL or ID (required) |
+| `type` | string | — | Embed type (required) |
+| `url` | string | — | Source URL to embed (required) |
+| `caption` | string | "" | Optional caption |
+
+**Supported types:** embed, bookmark, tweet, gist, figma, loom, typeform, codepen, maps, invision, framer, drive, html, miro, excalidraw, replit, deepnote, sketch, abstract, mixpanel.
+
+**Example call:**
+```json
+{"parent_id": "page-id", "type": "bookmark", "url": "https://example.com"}
+```
+
+**Returns:** Confirmation with created block ID.
+
+---
+
+### `create_table`
+
+Create a simple table (not a database) with specified dimensions.
+
+| Arg | Type | Default | Description |
+|---|---|---|---|
+| `parent_id` | string | — | Parent page URL or ID (required) |
+| `rows` | int | 3 | Number of rows |
+| `cols` | int | 2 | Number of columns |
+
+**Returns:** Confirmation with created table block ID.
+
+---
+
+### `create_columns`
+
+Create a column layout with N columns.
+
+| Arg | Type | Default | Description |
+|---|---|---|---|
+| `parent_id` | string | — | Parent page URL or ID (required) |
+| `num_columns` | int | 2 | Number of columns (1-10) |
+
+**Returns:** Confirmation with column_list block ID and individual column block IDs.
+
+---
+
+### `import_csv`
+
+Import a CSV file as a new database.
+
+| Arg | Type | Default | Description |
+|---|---|---|---|
+| `parent_id` | string | — | Parent page URL or ID (required) |
+| `file_path` | string | — | Path to CSV file (required) |
+| `title` | string | "" | Database title (defaults to filename) |
+
+**Returns:** Confirmation with created database block ID and row count.
+
+---
+
 ## Environment variables
 
 | Variable | Effect on tools |
 |---|---|
 | `NOTION_TOKEN_V2` | Notion session token. Required for all tools. |
 | `NOTION_SPACE_ID` | Bind to a specific space. Affects `search`, `list_pages`. |
-| `NOTION_ALLOW_WRITE` | Set to `1` to enable 9 write tools. Without it, only 6 read tools appear. |
+| `NOTION_ALLOW_WRITE` | Set to `1` to enable 16 write tools. Without it, only 7 read tools appear. |
 | `X-Notion-Token` header | Per-request Notion token (HTTP only). Overrides `NOTION_TOKEN_V2`. |
 | `NOTION_MCP_AUTH_TOKEN` | Bearer token for HTTP auth (not used in stdio). |
 
@@ -332,3 +468,11 @@ derives from it).
 | `401 Client Error: Unauthorized` | token_v2 is invalid or expired | Extract a fresh `token_v2` from browser DevTools |
 | `Write commands require NOTION_ALLOW_WRITE=1` | Write attempted without gate env var | Set `NOTION_ALLOW_WRITE=1` on the server |
 | `Unsupported field: <name>` | `update_block` called with invalid field | Use `"title"` or `"checked"` only |
+
+### Column blocks and depth >1
+
+`get_page` at `depth > 1` may not render column block children. Notion's
+`loadPageChunk` endpoint returns 400 for column blocks — the server falls
+back to `syncRecordValues` which loads the block but not its children. Use
+`depth: 1` for pages with column layouts, or fetch individual column block
+IDs returned by `create_columns`.

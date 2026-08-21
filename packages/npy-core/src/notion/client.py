@@ -274,7 +274,9 @@ class NotionClient(object):
             headers["x-notion-space-id"] = current_space.id
         response = self.session.post(url, json=data, headers=headers)
         if response.status_code == 400:
-            logger.error(
+            # Log at debug level — loadPageChunk returns 400 for non-page blocks
+            # (column, synced_block) which is expected and handled by fallback
+            logger.debug(
                 "Got 400 error attempting to POST to {}, with data: {}".format(
                     endpoint, json.dumps(data, indent=2)
                 )

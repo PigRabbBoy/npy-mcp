@@ -441,6 +441,8 @@ def _parse_rich_text(data) -> str:
 
 def _tree_to_markdown(client: NotionClient, block, depth: int, level: int = 0) -> list[str]:
     """Recursively render a block tree to markdown lines."""
+    if block is None:
+        return []
     lines = []
     btype = block.get("type", "") or ""
 
@@ -504,6 +506,8 @@ def _tree_to_markdown(client: NotionClient, block, depth: int, level: int = 0) -
     if children is None:
         return lines
     for child in children:
+        if child is None:
+            continue
         child_lines = _tree_to_markdown(
             client, child, depth - 1 if depth > 0 else -1, level + 1
         )
@@ -1144,11 +1148,9 @@ if _WRITE_ENABLED:
         title: str,
         columns: str = "",
         icon: str = "",
+        full_page: bool = False,
     ) -> str:
         """Create a new database (collection) under a parent page.
-
-        Creates an inline database (collection_view block) embedded within
-        the parent page. The database has a default table view.
 
         Args:
             parent_id: Parent page URL or ID
@@ -1160,6 +1162,8 @@ if _WRITE_ENABLED:
                 date, person, checkbox, url, email, phone_number, file, relation.
                 If omitted, creates a database with a single "Name" title column.
             icon: Optional emoji icon
+            full_page: If true, creates a full-page database (collection_view_page).
+                If false (default), creates an inline database embedded in the page.
 
         Returns:
             Database block ID (use with get_database, query_database, add_database_row).
@@ -1176,8 +1180,11 @@ if _WRITE_ENABLED:
         else:
             schema = {"title": {"name": "Name", "type": "title"}}
 
-        # Create inline database (CollectionViewBlock as child)
-        cvb = parent.children.add_new(CollectionViewBlock)
+        # Create database block as child of parent
+        if full_page:
+            cvb = parent.children.add_new(CollectionViewPageBlock)
+        else:
+            cvb = parent.children.add_new(CollectionViewBlock)
         collection_id = client.create_record(
             "collection", parent=cvb, schema=schema
         )
@@ -1480,17 +1487,19 @@ if _WRITE_ENABLED:
         cvb.title = title
         cvb.views.add_new(view_type="table")
 
-        # Add rows
-        title_name = schema[title_prop_id]["name"]
+        # Add rows — use slugified column names as keys (matching schema)
+        from notion.utils import slugify
+        title_slug = slugify(schema[title_prop_id]["name"])
         for row in rows_data:
             props = {}
             for i, val in enumerate(row):
                 if i < len(headers):
-                    col_name = headers[i]
-                    if i == headers.index(schema[title_prop_id]["name"]):
-                        props[title_name] = val
+                    if i == 0:
+                        # First column is title
+                        props[title_slug] = val
                     else:
-                        props[col_name] = val
+                        # Other columns use slugified header name
+                        props[slugify(headers[i])] = val
             try:
                 cvb.collection.add_row(**props)
             except Exception:

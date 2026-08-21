@@ -181,7 +181,21 @@ class RecordStore(object):
         # if it's not found, try refreshing the record from the server
         if result is Missing or force_refresh:
             if table == "block":
-                self.call_load_page_chunk(id,limit=limit)
+                if force_refresh and result is not Missing:
+                    # Already have the block — just refresh via syncRecordValues
+                    self.call_get_record_values(block=id)
+                elif result is Missing:
+                    # Block not in cache. Try loadPageChunk first (loads children
+                    # too), but fall back to syncRecordValues if it 400s
+                    # (column blocks and other non-page blocks can't be loaded
+                    # via loadPageChunk).
+                    try:
+                        self.call_load_page_chunk(id, limit=limit)
+                    except Exception:
+                        self.call_get_record_values(block=id)
+                    result = self._get(table, id)
+                else:
+                    self.call_load_page_chunk(id, limit=limit)
             else:
                 self.call_get_record_values(**{table: id})
             result = self._get(table, id)
@@ -280,8 +294,8 @@ class RecordStore(object):
             "verticalColumns": False,
         }
 
-        recordmap = self._client.post("loadPageChunk", data).json()["recordMap"]
-
+        response = self._client.post("loadPageChunk", data)
+        recordmap = response.json()["recordMap"]
         self.store_recordmap(recordmap)
 
     def store_recordmap(self, recordmap):
