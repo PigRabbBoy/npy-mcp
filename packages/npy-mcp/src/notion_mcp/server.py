@@ -446,7 +446,8 @@ def _tree_to_markdown(client: NotionClient, block, depth: int, level: int = 0) -
     lines = []
     btype = block.get("type", "") or ""
 
-    # Container blocks — render children, not the container itself
+    # Container blocks — render children, not the container itself.
+    # Container blocks don't consume depth (they're transparent wrappers).
     if btype == "column_list":
         if depth == 0:
             return lines
@@ -459,18 +460,18 @@ def _tree_to_markdown(client: NotionClient, block, depth: int, level: int = 0) -
             if child.get("type", "") == "column":
                 lines.append(("  " * level) + f"--- Column {col_num} ---")
                 child_lines = _tree_to_markdown(
-                    client, child, depth - 1 if depth > 0 else -1, level + 1
+                    client, child, depth, level + 1
                 )
                 lines.extend(child_lines)
             else:
                 child_lines = _tree_to_markdown(
-                    client, child, depth - 1 if depth > 0 else -1, level
+                    client, child, depth, level
                 )
                 lines.extend(child_lines)
         return lines
 
     if btype == "column":
-        # Column itself is transparent — just render children
+        # Column itself is transparent — just render children, don't consume depth
         if depth == 0:
             return lines
         children = getattr(block, "children", None)
@@ -478,13 +479,13 @@ def _tree_to_markdown(client: NotionClient, block, depth: int, level: int = 0) -
             return lines
         for child in children:
             child_lines = _tree_to_markdown(
-                client, child, depth - 1 if depth > 0 else -1, level
+                client, child, depth, level
             )
             lines.extend(child_lines)
         return lines
 
     if btype == "synced_block":
-        # Synced block — render children (same as a container)
+        # Synced block — render children, don't consume depth
         if depth == 0:
             return lines
         children = getattr(block, "children", None)
@@ -492,7 +493,7 @@ def _tree_to_markdown(client: NotionClient, block, depth: int, level: int = 0) -
             return lines
         for child in children:
             child_lines = _tree_to_markdown(
-                client, child, depth - 1 if depth > 0 else -1, level
+                client, child, depth, level
             )
             lines.extend(child_lines)
         return lines
