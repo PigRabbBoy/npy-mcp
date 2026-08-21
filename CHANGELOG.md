@@ -106,3 +106,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cookie-based Notion client (unofficial)
 - Block, Collection, User, Space models
 - Markdown export support
+## [0.2.9] - 2026-08-21
+
+### Added
+- Image blocks now emit downloadable Notion proxy URL (`https://app.notion.com/image/<attachment>?table=block&id=<block_id>&spaceId=...&userId=...`) — auth via token_v2 cookie, works with `curl` or any HTTP client
+- `_build_image_url()` constructs proxy URL from `attachment:<file_id>:<filename>` source
+- Image marker shows filename + proxy URL: `[image] image.png — https://app.notion.com/image/...`
