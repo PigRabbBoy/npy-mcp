@@ -147,3 +147,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `add_column` tool — adds a column to an existing database. Supports all property types including status.
 - `status` property type — handled as alias of select in collection.py for both read and write.
 - 18 total tools (7 read + 11 write).
+
+## [0.4.2] - 2026-08-21
+
+### Added
+- `create_media` tool — creates image/video/audio/file/pdf blocks from URL or local file upload.
+- `create_embed` tool — creates embed blocks for all 20 embed types (embed, bookmark, tweet, gist, figma, loom, typeform, codepen, maps, invision, framer, drive, html, miro, excalidraw, replit, deepnote, sketch, abstract, mixpanel).
+- `create_table` tool — creates a simple table block with specified dimensions.
+- Extended `append_blocks` — now supports toggle, equation, subsubheader (13 types total, was 10).
+- 21 total tools (7 read + 14 write).
