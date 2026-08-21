@@ -177,3 +177,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Updated
 - TOOLS.md: 23 tools (7 read + 16 write), all new tools documented, column block depth limitation noted.
+
+## [0.5.2] - 2026-08-21
+
+### Fixed
+- `create_media` file upload: now uses `getUploadSpaceFileUrl` endpoint with `record:{table:'block',id,spaceId}` in request body. Reads `putHeaders` from response and sends `x-amz-tagging` header with S3 PUT (was causing 403 Forbidden). Verified: upload PNG → get_image downloads it back successfully.
