@@ -156,3 +156,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `create_table` tool — creates a simple table block with specified dimensions.
 - Extended `append_blocks` — now supports toggle, equation, subsubheader (13 types total, was 10).
 - 21 total tools (7 read + 14 write).
+
+## [0.5.0] - 2026-08-21
+
+### Added
+- `import_csv` tool — parses CSV file locally, creates inline database with headers as columns, inserts all rows.
+- `create_columns` tool — creates a column_list layout with N empty column blocks.
+- 23 total tools (7 read + 16 write).
+
+### Changed
+- MAJOR version bump: new capability (import). Import is a new tool category that creates databases from external file formats.
