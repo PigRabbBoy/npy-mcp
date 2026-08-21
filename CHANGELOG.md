@@ -166,3 +166,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - MAJOR version bump: new capability (import). Import is a new tool category that creates databases from external file formats.
+
+## [0.5.1] - 2026-08-21
+
+### Fixed
+- `import_csv`: use slugify() for column names — no more duplicate "Name 1" column bug.
+- Column block read: fallback from `loadPageChunk` to `syncRecordValues` for non-page blocks. 400 errors logged at debug level instead of error.
+- `_tree_to_markdown`: None guard for blocks that fail to load (no crash on column blocks at depth >1).
+- `create_database`: added `full_page` parameter — creates full-page database (collection_view_page) when true.
+
+### Updated
+- TOOLS.md: 23 tools (7 read + 16 write), all new tools documented, column block depth limitation noted.
