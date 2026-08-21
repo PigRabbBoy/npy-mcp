@@ -125,3 +125,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `get_image` now returns MCP `ImageContent` (native image block) instead of base64 text — client renders as image (~157 tokens) not text (~37k tokens). Fixes "result exceeds maximum allowed tokens" error.
 - Uses `mcp.server.mcpserver.Image(data=bytes, format=fmt)` with `structured_output=False`
+
+## [0.4.0] - 2026-08-21
+
+### Added
+- Full read coverage for all 52 Notion block types (was 38)
+- 14 new block classes: Heading 4 (sub_sub_sub_header), SyncedBlock, SimpleTable, TableOfContents, LinkToPage, HTML, Miro, Excalidraw, Replit, Deepnote, Sketch, Abstract, Mixpanel, PdfEmbed
+- Column rendering: column_list renders children with `--- Column N ---` headers, column is transparent container
+- Synced block rendering: renders children recursively (no data loss)
+- New block type markers: breadcrumb, factory, link_to_collection, table_of_contents, link_to_page
+- Extended embed type list: html, miro, excalidraw, replit, deepnote, sketch, abstract, mixpanel
+- test_block_types_registered test (58 total tests)
+
+### Fixed
+- No more silent data loss: column_list, column, synced_block, breadcrumb, factory, link_to_collection, link_to_page now render instead of returning empty string
