@@ -275,14 +275,8 @@ def _build_image_url(block) -> str:
 def _block_to_markdown(block) -> str:
     """Convert a single block to markdown text."""
     btype = block.get("type", "") or ""
-    # Image — emit marker with downloadable URL
+    # Image — emit marker with filename and get_image hint
     if btype == "image":
-        url = _build_image_url(block)
-        caption = ""
-        try:
-            caption = block.caption or ""
-        except Exception:
-            pass
         # Extract filename from properties for readability
         filename = ""
         try:
@@ -293,15 +287,13 @@ def _block_to_markdown(block) -> str:
                 filename = title_raw[0]
         except Exception:
             pass
-        parts = ["[image]"]
-        if caption:
-            parts.append(caption)
-        elif filename:
-            parts.append(filename)
-        if url:
-            parts.append(f"— {url}")
-        return " ".join(parts)
-        return "[image] (no source)"
+        caption = ""
+        try:
+            caption = block.caption or ""
+        except Exception:
+            pass
+        label = caption or filename or "(untitled)"
+        return f"[image] {label} — use get_image(\"{block.id}\") to download"
     # Embed/video/file/audio/pdf — emit marker with source URL
     if btype in ("embed", "video", "file", "audio", "pdf"):
         source = block.get("format.display_source") or block.get("source") or ""
@@ -515,6 +507,57 @@ def get_block(block_id: str) -> str:
             return f"[{btype}] {title}"
         return f"[{btype}] (no text content — use get_page or get_database for details)"
     return md
+
+
+@mcp.tool()
+def get_image(block_id: str) -> str:
+    """Download an image block and return it as base64 data URI.
+
+    The Notion image proxy URL requires token_v2 cookie authentication, so
+    external clients cannot download images directly. This tool fetches the
+    image through the server's authenticated session and returns it as a
+    base64-encoded data URI that the agent can use directly.
+
+    Args:
+        block_id: Image block URL or ID
+
+    Returns:
+        Base64 data URI: data:<mime>;base64,<data>
+    """
+    import base64
+    client = _get_client()
+    block = client.get_block(block_id)
+    if block is None:
+        return f"Block not found: {block_id}"
+    btype = block.get("type", "") or ""
+    if btype != "image":
+        return f"Block {block_id} is not an image (type: {btype})"
+    url = _build_image_url(block)
+    if not url:
+        return f"Image block {block_id} has no source URL"
+    try:
+        r = client.session.get(url, allow_redirects=True, timeout=30)
+        r.raise_for_status()
+    except Exception as exc:
+        return f"Failed to download image: {exc}"
+    mime = r.headers.get("content-type", "image/png")
+    # Fallback mime detection from filename
+    if not mime or mime == "application/octet-stream":
+        source = block.get("format.display_source") or block.get("source") or ""
+        if source.endswith(".png"):
+            mime = "image/png"
+        elif source.endswith(".jpg") or source.endswith(".jpeg"):
+            mime = "image/jpeg"
+        elif source.endswith(".gif"):
+            mime = "image/gif"
+        elif source.endswith(".svg"):
+            mime = "image/svg+xml"
+        elif source.endswith(".webp"):
+            mime = "image/webp"
+        else:
+            mime = "image/png"
+    b64 = base64.b64encode(r.content).decode("ascii")
+    return f"data:{mime};base64,{b64}"
 
 
 @mcp.tool()

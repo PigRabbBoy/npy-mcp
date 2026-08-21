@@ -24,13 +24,14 @@ def mcp_server(monkeypatch):
 class TestToolRegistration:
     @pytest.mark.asyncio
     async def test_read_tools_registered(self, mcp_server):
-        """Without NOTION_ALLOW_WRITE, only 6 read tools should be registered."""
+        """Without NOTION_ALLOW_WRITE, only 7 read tools should be registered."""
         async with Client(mcp_server) as client:
             result = await client.list_tools()
             tool_names = [t.name for t in result.tools]
             assert "search" in tool_names
             assert "get_page" in tool_names
             assert "get_block" in tool_names
+            assert "get_image" in tool_names
             assert "list_pages" in tool_names
             assert "get_database" in tool_names
             assert "query_database" in tool_names
@@ -41,13 +42,13 @@ class TestToolRegistration:
     async def test_read_tool_count(self, mcp_server):
         async with Client(mcp_server) as client:
             result = await client.list_tools()
-            assert len(result.tools) == 6
+            assert len(result.tools) == 7
 
 
 class TestWriteGate:
     @pytest.mark.asyncio
     async def test_write_tools_when_enabled(self, monkeypatch):
-        """With NOTION_ALLOW_WRITE=1, all 15 tools should be registered."""
+        """With NOTION_ALLOW_WRITE=1, all 16 tools should be registered."""
         monkeypatch.setenv("NOTION_TOKEN_V2", "test-token")
         monkeypatch.setenv("NOTION_ALLOW_WRITE", "1")
         import importlib
@@ -57,7 +58,7 @@ class TestWriteGate:
         async with Client(mcp) as client:
             result = await client.list_tools()
             tool_names = [t.name for t in result.tools]
-            assert len(result.tools) == 15
+            assert len(result.tools) == 16
             assert "create_page" in tool_names
             assert "delete_block" in tool_names
             assert "add_database_row" in tool_names
