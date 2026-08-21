@@ -509,22 +509,24 @@ def get_block(block_id: str) -> str:
     return md
 
 
-@mcp.tool()
-def get_image(block_id: str) -> str:
-    """Download an image block and return it as base64 data URI.
+@mcp.tool(structured_output=False)
+def get_image(block_id: str):
+    """Download an image block and return it as MCP ImageContent.
 
     The Notion image proxy URL requires token_v2 cookie authentication, so
     external clients cannot download images directly. This tool fetches the
-    image through the server's authenticated session and returns it as a
-    base64-encoded data URI that the agent can use directly.
+    image through the server's authenticated session and returns it as an
+    MCP image content block — the client renders it natively as an image
+    (~157 tokens for a typical diagram), not as base64 text (~37k tokens).
 
     Args:
         block_id: Image block URL or ID
 
     Returns:
-        Base64 data URI: data:<mime>;base64,<data>
+        MCP ImageContent (image block) — client renders as image.
+        On error, returns a text message.
     """
-    import base64
+    from mcp.server.mcpserver import Image
     client = _get_client()
     block = client.get_block(block_id)
     if block is None:
@@ -556,8 +558,9 @@ def get_image(block_id: str) -> str:
             mime = "image/webp"
         else:
             mime = "image/png"
-    b64 = base64.b64encode(r.content).decode("ascii")
-    return f"data:{mime};base64,{b64}"
+    # Extract format from mime (e.g. "image/png" -> "png")
+    fmt = mime.split("/")[-1] if "/" in mime else "png"
+    return Image(data=r.content, format=fmt)
 
 
 @mcp.tool()
