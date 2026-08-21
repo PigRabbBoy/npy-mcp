@@ -692,21 +692,45 @@ class EmbedOrUploadBlock(EmbedBlock):
 
         mimetype = mimetypes.guess_type(path)[0] or "text/plain"
         filename = os.path.split(path)[-1]
+        file_size = os.path.getsize(path)
+
+        space = getattr(self._client, "current_space", None)
+        space_id = space.id if space else ""
+
+        upload_data = {
+            "bucket": "secure",
+            "name": filename,
+            "contentType": mimetype,
+            "record": {"table": "block", "id": self.id, "spaceId": space_id},
+            "supportExtraHeaders": True,
+            "contentLength": file_size,
+            "spaceId": space_id,
+        }
 
         data = self._client.post(
-            "getUploadFileUrl",
-            {"bucket": "secure", "name": filename, "contentType": mimetype},
+            "getUploadSpaceFileUrl",
+            upload_data,
         ).json()
 
-        with open(path, "rb") as f:
-            response = requests.put(
-                data["signedPutUrl"], data=f, headers={"Content-type": mimetype}
-            )
-            response.raise_for_status()
+        # Response has signedPutUrl (S3 PUT) with putHeaders
+        if "signedPutUrl" in data:
+            put_url = data["signedPutUrl"]
+            # Build headers from putHeaders
+            put_headers = {"Content-type": mimetype}
+            for h in data.get("putHeaders", []):
+                put_headers[h["name"]] = h["value"]
+            with open(path, "rb") as f:
+                response = requests.put(
+                    put_url, data=f, headers=put_headers
+                )
+                response.raise_for_status()
+        else:
+            raise RuntimeError(f"Upload response missing signedPutUrl: {list(data.keys())}")
 
-        self.display_source = data["url"]
-        self.source = data["url"]
-        self.file_id = data["url"][len(S3_URL_PREFIX) :].split("/")[0]
+        # Set the block source to the attachment URL
+        source_url = data["url"]
+        self.display_source = source_url
+        self.source = source_url
 
 
 class VideoBlock(EmbedOrUploadBlock):
