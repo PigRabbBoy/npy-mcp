@@ -238,19 +238,69 @@ def _get_inline_db_name(block) -> str:
     return ""
 
 
+def _build_image_url(block) -> str:
+    """Build a downloadable image URL for an image block.
+
+    Notion stores images as 'attachment:<file_id>:<filename>' which the browser
+    resolves via a proxy URL: https://app.notion.com/image/<url-encoded-source>?table=block&id=<block_id>&spaceId=...&userId=...
+    This proxy URL works with the token_v2 cookie for authentication.
+    """
+    source = block.get("format.display_source") or block.get("source") or ""
+    if not source:
+        return ""
+    # If it's already a full URL (http/https), return as-is
+    if source.startswith("http"):
+        return source
+    # Build Notion image proxy URL for attachment: sources
+    from urllib.parse import quote
+    space_id = ""
+    user_id = ""
+    try:
+        space_id = block._client.current_space.id
+    except Exception:
+        pass
+    try:
+        user_id = block._client.current_user.id
+    except Exception:
+        pass
+    params = f"table=block&id={block.id}"
+    if space_id:
+        params += f"&spaceId={space_id}"
+    if user_id:
+        params += f"&userId={user_id}"
+    params += "&cache=v2"
+    return f"https://app.notion.com/image/{quote(source, safe='')}?{params}"
+
+
 def _block_to_markdown(block) -> str:
     """Convert a single block to markdown text."""
     btype = block.get("type", "") or ""
-    # Image — emit marker with URL so reader knows it exists
+    # Image — emit marker with downloadable URL
     if btype == "image":
-        source = block.get("format.display_source") or block.get("source") or ""
+        url = _build_image_url(block)
         caption = ""
         try:
             caption = block.caption or ""
         except Exception:
             pass
-        if source:
-            return f"[image] {caption} — {source}" if caption else f"[image] {source}"
+        # Extract filename from properties for readability
+        filename = ""
+        try:
+            title_raw = block.get("properties.title") or []
+            if title_raw and isinstance(title_raw[0], list):
+                filename = str(title_raw[0][0])
+            elif title_raw and isinstance(title_raw[0], str):
+                filename = title_raw[0]
+        except Exception:
+            pass
+        parts = ["[image]"]
+        if caption:
+            parts.append(caption)
+        elif filename:
+            parts.append(filename)
+        if url:
+            parts.append(f"— {url}")
+        return " ".join(parts)
         return "[image] (no source)"
     # Embed/video/file/audio/pdf — emit marker with source URL
     if btype in ("embed", "video", "file", "audio", "pdf"):
