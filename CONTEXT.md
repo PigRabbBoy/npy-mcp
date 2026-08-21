@@ -58,3 +58,36 @@ _Avoid_: extract, render, dump
 A saved HTTP request/response pair captured from a live Notion session,
 replayed by the test suite to avoid hitting Notion in CI.
 _Avoid_: fixture, snapshot, mock
+
+**Embed Block**:
+A block that renders external content inline (tweet, figma, gist, miro, etc.).
+Has a source URL and a Notion-assigned type. Distinguished from Media blocks
+which can be uploaded.
+_Avoid_: widget, iframe, integration
+
+**Media Block**:
+A block that holds binary content (image, video, audio, file, pdf). Can be
+created from a URL or uploaded via `getUploadFileUrl` → S3 PUT.
+_Avoid_: attachment, upload, binary block
+
+**Inline Database**:
+A database embedded as a block within a page (`collection_view`), as opposed
+to a full-page database (`collection_view_page`).
+_Avoid_: inline table, embedded database
+
+**Import Operation**:
+A Write Operation that creates Pages or Databases from external file formats
+(CSV, Markdown, etc.). Parses files locally and creates blocks via
+`saveTransactionsFanout`.
+_Avoid_: file import, data import
+
+**Synced Block**:
+A block whose content is mirrored from a source block. Edits to the source
+propagate to all synced copies.
+_Avoid_: mirror block, duplicate block
+
+**Property Type**:
+The data type of a Database column (title, text, number, select, date, etc.).
+Determined by the schema's `type` field. The `status` type is handled as an
+alias of `select` in the internal API.
+_Avoid_: column type, field type, data type
