@@ -241,10 +241,35 @@ def _get_inline_db_name(block) -> str:
 def _block_to_markdown(block) -> str:
     """Convert a single block to markdown text."""
     btype = block.get("type", "") or ""
-    # Inline database — emit a stub so it's not silently skipped
+    # Image — emit marker with URL so reader knows it exists
+    if btype == "image":
+        source = block.get("format.display_source") or block.get("source") or ""
+        caption = ""
+        try:
+            caption = block.caption or ""
+        except Exception:
+            pass
+        if source:
+            return f"[image] {caption} — {source}" if caption else f"[image] {source}"
+        return "[image] (no source)"
+    # Embed/video/file/audio/pdf — emit marker with source URL
+    if btype in ("embed", "video", "file", "audio", "pdf"):
+        source = block.get("format.display_source") or block.get("source") or ""
+        return f"[{btype}] {source}" if source else f"[{btype}] (no source)"
+    # Bookmark/figma/tweet/gist/etc — emit marker with source URL
+    if btype in ("bookmark", "figma", "tweet", "gist", "drive", "loom", "typeform", "codepen", "maps", "invision", "framer"):
+        source = block.get("format.display_source") or block.get("source") or ""
+        return f"[{btype}] {source}" if source else f"[{btype}]"
+    # Simple table (type=table) — render as markdown table from children
+    if btype == "table":
+        return _table_to_markdown(block)
+    # Inline database — only emit stub if there's actually a collection
     if btype in ("collection_view", "collection_view_page"):
-        db_name = _get_inline_db_name(block) or "(unnamed)"
-        return f"[inline database] {db_name} — use get_database(\"{block.id}\")"
+        db_name = _get_inline_db_name(block)
+        if db_name:
+            return f"[inline database] {db_name} — use get_database(\"{block.id}\")"
+        # No collection found — might be a simple table misidentified, or empty DB
+        return f"[collection_view] (no collection) — block id: {block.id}"
     try:
         md = block.title_plaintext
     except Exception:
@@ -273,7 +298,76 @@ def _block_to_markdown(block) -> str:
         return "---"
     if btype == "toggle":
         return f"<details><summary>{md}</summary></details>"
+    if btype == "equation":
+        return f"$$ {md} $$"
     return md
+
+
+def _table_to_markdown(block) -> str:
+    """Render a Notion simple table (type=table) as a markdown table.
+
+    Simple tables store rows as children blocks, with cells in properties.
+    """
+    children = getattr(block, "children", None)
+    if not children:
+        return f"[table] (empty — block id: {block.id})"
+    # Check if table has collection (some tables are collection-backed)
+    col = getattr(block, "collection", None)
+    if col is not None:
+        db_name = _get_inline_db_name(block) or "(unnamed)"
+        return f"[inline database] {db_name} — use get_database(\"{block.id}\")"
+    rows = []
+    for child in children:
+        cells = []
+        # Table row cells are in properties, keyed by column id
+        props = child.get("properties") or {}
+        # Get column order from format
+        fmt = block.get("format", {}) or {}
+        col_order = fmt.get("table_block_column_order", [])
+        col_widths = fmt.get("table_block_column_format", {})
+        if col_order:
+            for col_id in col_order:
+                cell_data = props.get(col_id, [])
+                cell_text = _parse_rich_text(cell_data)
+                cells.append(cell_text.replace("|", "\\|").replace("\n", " "))
+        else:
+            # Fallback: just dump all property values in order
+            for _, cell_data in props.items():
+                cell_text = _parse_rich_text(cell_data)
+                cells.append(cell_text.replace("|", "\\|").replace("\n", " "))
+        rows.append(cells)
+    if not rows:
+        return f"[table] (no rows — block id: {block.id})"
+    # First row is header
+    ncols = len(rows[0])
+    lines = []
+    lines.append("| " + " | ".join(rows[0]) + " |")
+    lines.append("| " + " | ".join("---" for _ in range(ncols)) + " |")
+    for row in rows[1:]:
+        # Pad row to ncols
+        while len(row) < ncols:
+            row.append("")
+        lines.append("| " + " | ".join(row[:ncols]) + " |")
+    return "\n".join(lines)
+
+
+def _parse_rich_text(data) -> str:
+    """Parse Notion rich-text property value to plain text.
+
+    Notion stores cell text as: [["text", [["b"]]], [", "], ["more text"]]
+    Each element is [text, formatting_markers] or a plain string.
+    """
+    if not data:
+        return ""
+    if isinstance(data, str):
+        return data
+    parts = []
+    for segment in data:
+        if isinstance(segment, str):
+            parts.append(segment)
+        elif isinstance(segment, list) and segment:
+            parts.append(str(segment[0]))
+    return "".join(parts)
 
 
 def _tree_to_markdown(client: NotionClient, block, depth: int, level: int = 0) -> list[str]:
@@ -419,15 +513,34 @@ def get_database(
     collection = None
     if block is not None:
         collection = getattr(block, "collection", None)
+        # If block is collection_view but collection is None (lazy-loaded),
+        # try resolving via view_ids → collection_view record → collection_pointer
+        if collection is None and block.get("view_ids"):
+            view_ids = block.get("view_ids") or []
+            for vid in view_ids:
+                cv_data = client._store._values.get("collection_view", {}).get(vid)
+                if cv_data:
+                    ptr = cv_data.get("format", {}).get("collection_pointer", {})
+                    col_id = ptr.get("id")
+                    if col_id:
+                        try:
+                            collection = client.get_collection(col_id)
+                            break
+                        except Exception:
+                            pass
     if collection is None:
         try:
             collection = client.get_collection(database_id)
         except Exception:
             pass
     if collection is None:
-        return f"Database not found: {database_id}"
-    name = collection.name if hasattr(collection, "name") else "(unnamed)"
-    schema = collection.get_schema_properties() if hasattr(collection, "get_schema_properties") else []
+        btype = block.get("type", "") if block else "(unknown)"
+        return f"Database not found: {database_id} (block type: {btype}). This may be a simple table, not a database — use get_page to read it."
+    try:
+        name = collection.name if hasattr(collection, "name") else "(unnamed)"
+        schema = collection.get_schema_properties() if hasattr(collection, "get_schema_properties") else []
+    except Exception as exc:
+        return f"Failed to read database schema: {exc}"
     # Build slug → name map for readable column keys
     slug_to_name: dict[str, str] = {}
     formula_slugs: set[str] = set()
@@ -488,15 +601,33 @@ def query_database(
     collection = None
     if block is not None:
         collection = getattr(block, "collection", None)
+        # If block is collection_view but collection is None (lazy-loaded),
+        # try resolving via view_ids → collection_view record → collection_pointer
+        if collection is None and block.get("view_ids"):
+            view_ids = block.get("view_ids") or []
+            for vid in view_ids:
+                cv_data = client._store._values.get("collection_view", {}).get(vid)
+                if cv_data:
+                    ptr = cv_data.get("format", {}).get("collection_pointer", {})
+                    col_id = ptr.get("id")
+                    if col_id:
+                        try:
+                            collection = client.get_collection(col_id)
+                            break
+                        except Exception:
+                            pass
     if collection is None:
         try:
             collection = client.get_collection(database_id)
         except Exception:
             pass
     if collection is None:
-        return f"Database not found: {database_id}"
-    # Build slug → name map for readable column keys
-    schema = collection.get_schema_properties() if hasattr(collection, "get_schema_properties") else []
+        btype = block.get("type", "") if block else "(unknown)"
+        return f"Database not found: {database_id} (block type: {btype}). This may be a simple table, not a database — use get_page to read it."
+    try:
+        schema = collection.get_schema_properties() if hasattr(collection, "get_schema_properties") else []
+    except Exception as exc:
+        return f"Failed to read database schema: {exc}"
     slug_to_name: dict[str, str] = {}
     col_names: list[str] = []
     formula_slugs: set[str] = set()
