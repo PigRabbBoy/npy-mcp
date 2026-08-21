@@ -112,3 +112,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Image blocks now emit downloadable Notion proxy URL (`https://app.notion.com/image/<attachment>?table=block&id=<block_id>&spaceId=...&userId=...`) — auth via token_v2 cookie, works with `curl` or any HTTP client
 - `_build_image_url()` constructs proxy URL from `attachment:<file_id>:<filename>` source
 - Image marker shows filename + proxy URL: `[image] image.png — https://app.notion.com/image/...`
+
+## [0.3.0] - 2026-08-21
+
+### Added
+- New `get_image(block_id)` read tool — downloads image blocks through the server's authenticated session and returns base64 data URI (`data:<mime>;base64,<data>`). Agent can read Notion images directly without needing cookie auth.
+- Image marker in `get_page` now shows `use get_image("<block_id>") to download` instead of dead proxy URL
+- 7 read tools + 9 write tools = 16 total (was 15)
