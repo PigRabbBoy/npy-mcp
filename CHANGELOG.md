@@ -214,3 +214,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Formula evaluation coverage on live BML MA Dashboard workspace: **(computed) count went from 480+ → 0** across all 8 databases (~720 formula cells in Subscription DB alone).
 - Empty formula bodies now render as "" instead of "(computed)".
+
+## [0.7.1] - 2026-08-21
+
+### Added
+- Cross-checked interpreter against **Notion's production JS bundle** (extracted webpack chunk map → downloaded 2,170 lazy chunks → located formula registry). Findings now implemented:
+  - `padStart(text, targetLength, padString=" ")` / `padEnd(...)` — undocumented in help docs
+  - `splice(list, startIndex, deleteCount = 0, ...items)` (list operator; also works on text)
+  - `"seconds"` / `"milliseconds"` units for `dateAdd/dateSubtract/dateBetween`
+  - `formatDate(date, format, timezone?)` optional third arg accepted
+- All 18 registry operators confirmed already supported (`unaryMinus/unaryPlus/larger/smaller/largerEq/smallerEq/...`).
+- +4 unit tests (79 total). Live sweep: computed=0 across all dashboard databases.

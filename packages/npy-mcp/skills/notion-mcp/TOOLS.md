@@ -465,7 +465,11 @@ client-side. Coverage matches the official function list
 - **Lists**: `at/first/last/slice/concat/sort(+key λ)/reverse/join/split/
   unique/includes/find/findIndex/filter/map/some/every/flat/length`
 - **Text**: `contains/test/match/replace/replaceAll/lower/upper/trim/repeat/
-  substring/format/formatNumber/toNumber/link/style(unstyled output)`
+  substring/format/formatNumber/toNumber/link/style(unstyled output)`,
+  plus bundle-only extras verified against Notion's production JS:
+  `padStart/padEnd`, `splice(list, start, deleteCount?, ...items)`,
+  `seconds`/`milliseconds` units for dateAdd/Subtract/Between,
+  `formatDate(date, fmt, timezone?)`
 - **People**: `.name()/.email()`
 - **Empty semantics**: blank operands propagate as blanks (matching Notion),
   never render as `(computed)`.

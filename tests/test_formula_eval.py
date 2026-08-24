@@ -209,3 +209,33 @@ def test_comparisons():
 def test_style_link():
     assert ev('style("hi", "b", "red")') == "hi"
     assert ev('link("Go", "https://x.com")') == "[Go](https://x.com)"
+
+
+# --- undocumented-in-docs functions (verified from production JS bundle) ------
+
+def test_pad_start_end():
+    assert ev('padStart("7", 3, "0")') == "007"
+    assert ev('padEnd("7", 3, "0")') == "700"
+    assert ev('padStart("abc", 2)') == "abc"  # no-op when already longer
+    assert ev('"5".padStart(2, "0")') == "05"
+
+
+def test_splice():
+    assert ev("splice([1, 2, 3, 4], 1, 2)") == [1, 4]
+    assert ev("splice([1, 4], 1, 0, 2, 3)") == [1, 2, 3, 4]
+    assert ev('splice("abcd", 1, 2, "X")') == "aXd"
+
+
+def test_seconds_milliseconds_units():
+    assert ev(
+        'dateBetween(parseDate("2026-01-01"), parseDate("2026-01-01"), "seconds")'
+    ) in (0,)
+    v = ev(
+        'dateBetween(parseDate("2026-01-02"), parseDate("2026-01-01"), "milliseconds")'
+    )
+    assert v == 86400000
+
+
+def test_format_date_timezone_arity():
+    # bundle shows optional timezone param — must not break arity check
+    assert ev('formatDate(parseDate("2026-08-21"), "MM/DD/YYYY", "Asia/Bangkok")') == "08/21/2026"

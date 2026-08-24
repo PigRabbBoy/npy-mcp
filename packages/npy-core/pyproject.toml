@@ -1,6 +1,6 @@
 [project]
 name = "npy-core"
-version = "0.7.0"
+version = "0.7.1"
 description = "Cookie-based Notion internal API client (core library)"
 requires-python = ">=3.12"
 dependencies = [

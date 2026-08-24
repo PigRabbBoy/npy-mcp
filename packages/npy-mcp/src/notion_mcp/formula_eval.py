@@ -404,6 +404,11 @@ def _add_units(d: _date, n: float, unit: str) -> _date:
         return d + _td(days=int(round(n * 7)))
     if unit == "days":
         return d + _td(days=int(round(n)))
+    if unit in ("seconds", "milliseconds"):
+        if unit == "milliseconds":
+            n = n / 1000.0
+        dt = _dt(d.year, d.month, d.day) + _td(seconds=round(n))
+        return dt.date()
     raise _Unsupported(f"dateAdd unit {unit}")
 
 
@@ -789,6 +794,22 @@ class Interp:
                         if _truthy(self._lambda_eval(lam, it, i)):
                             return i
                     return -1
+        if name in ("padStart", "padEnd"):
+            txt = _as_text(base)
+            target = int(_as_num(one_arg()) or 0)
+            pad = _as_text(one_arg(1)) if arg_asts and len(arg_asts) > 1 else " "
+            if not pad:
+                return txt
+            fill = (pad * max(0, target))[:max(0, target - len(txt))]
+            return (fill + txt) if name == "padStart" else (txt + fill)
+        if name == "splice":
+            start = int(_as_num(one_arg()) or 0)
+            delc = int(_as_num(one_arg(1))) if len(arg_asts) > 1 else 0
+            ins = [self.ev(a) for a in arg_asts[2:]] if arg_asts else []
+            if isinstance(base, str):
+                return base[:start] + "".join(_as_text(x) for x in ins) + base[start + delc:]
+            lst = items()
+            return lst[:start] + ins + lst[start + delc:]
         if name == "id":
             if isinstance(base, Page):
                 return base.data.get("id", "")
@@ -955,6 +976,10 @@ class Interp:
                 return days * 1440
             if unit == "quarters":
                 return round(days / 91.31)
+            if unit == "seconds":
+                return int(secs)
+            if unit == "milliseconds":
+                return int(secs * 1000)
             raise _Unsupported(unit)
         if name == "dateAdd":
             if not ev_i(0) or not ev_i(1):
@@ -1093,6 +1118,25 @@ class Interp:
                         if _truthy(self._lambda_eval(lam, it, i)):
                             return i
                     return -1
+        if name in ("padStart", "padEnd"):
+            txt = _as_text(ev_i(0))
+            target = int(_as_num(ev_i(1)) or 0)
+            pad = _as_text(ev_i(2)) if len(arg_asts) > 2 else " "
+            if not pad:
+                return txt
+            fill = (pad * max(0, target))[:max(0, target - len(txt))]
+            return (fill + txt) if name == "padStart" else (txt + fill)
+        if name == "splice":
+            seq = ev_i(0)
+            start = int(_as_num(ev_i(1)) or 0)
+            delc = int(_as_num(ev_i(2))) if len(arg_asts) > 2 else 0
+            inserts = [self.ev(a) for a in arg_asts[3:]]
+            if isinstance(seq, str):
+                out = seq[:start] + "".join(_as_text(x) for x in inserts) + seq[start + delc:]
+                return out
+            lst = _flat_list(seq)
+            newl = lst[:start] + inserts + lst[start + delc:]
+            return newl
         if name == "id":
             if arg_asts:
                 v = ev_i(0)
