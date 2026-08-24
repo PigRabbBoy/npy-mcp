@@ -239,3 +239,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OSV/pip-audit over all 57 locked dependencies: **0 known vulnerabilities**; lockfile already at latest versions.
 - Code scan: no `eval`/`exec`/unsafe deserialization/shell-out; request logging never emits auth headers.
 - New tests: 6 security tests (85 total).
+
+## [0.7.3] - 2026-08-24
+
+### Fixed
+- Smoke test flakiness: Notion's search index is eventually consistent and can lag well past a minute, so the space-wide search retry window was raised from ~60s (20×3s) to up to ~300s (60×5s), and now checks before sleeping so fast-indexed runs return instantly.

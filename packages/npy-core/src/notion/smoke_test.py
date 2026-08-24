@@ -148,14 +148,15 @@ def run_live_smoke_test(token_v2, parent_page_url_or_id):
     assert row1 not in cvb.collection.get_rows(search="penguins")
     assert row2 in cvb.collection.get_rows(search="penguins")
 
-    # search the entire space (allow time for indexing)
-    for _ in range(20):
-        time.sleep(3)
+    # search the entire space (allow generous time for indexing — Notion's
+    # search index is eventually consistent and can lag well past a minute)
+    for attempt in range(60):
         if (
             row1 in client.search_blocks(search=special_code, limit=100)
             and row2 in client.search_blocks(search="penguins", limit=100)
         ):
             break
+        time.sleep(5)
     assert row1 in client.search_blocks(search=special_code, limit=100)
     assert row1 not in client.search_blocks(search="penguins", limit=100)
     assert row2 not in client.search_blocks(search=special_code, limit=100)
