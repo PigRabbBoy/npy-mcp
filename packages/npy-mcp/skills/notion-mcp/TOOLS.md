@@ -449,30 +449,29 @@ Import a CSV file as a new database.
 
 ### Formula and rollup columns
 
-`get_database` and `query_database` **evaluate common formula/rollup shapes
-client-side** from the schema definitions (the internal API does not return
-computed values). Supported patterns:
+`get_database` and `query_database` evaluate formulas via a **full Notion
+formula interpreter** (`formula_eval.py`) — the internal API never returns
+computed values, so we parse the schema's `formula2.code` and run it
+client-side. Coverage matches the official function list
+(https://www.notion.com/help/formula-syntax):
 
-| Pattern | Example |
-|---|---|
-| Rollup (relation → target property) | Dev Slack ID ← contacts.Slack ID |
-| `REF.at(0).REF` | first related row's field |
-| `REF.map(current.REF).join(sep)` | emails joined |
-| `REF.sort(REF).reverse().at(0)` | latest related row (shown as row title) |
-| `A.B` chained deref (incl. formula→block) | Current sub → days left |
-| `REF.length()` | count relations |
-| `filter(... == "x").length()` / `sum(filter(...).map(...))` | counts & sums |
-| `dateBetween(d, now(), unit)` | days until expiry |
-| `dateAdd(d, n, unit)` / `d.dateAdd(n, unit)` | expiry dates |
-| `a.at(0).b * c` | rate × qty |
+- **Logic**: `if`, `ifs`, ternary `? :`, `and/or/not`, comparisons
+- **Variables**: `let`, `lets`
+- **Math**: full operator set (`+ - * / % ^`), `add…sign`, `round(2-arg)`,
+  `pi/e/log/exp/sqrt/cbrt`
+- **Dates**: `now/today/dateAdd/dateSubtract/dateBetween (all units)/
+  parseDate/formatDate/year/month/day/date/week/hour/minute/timestamp/
+  fromTimestamp/dateStart/dateEnd`
+- **Lists**: `at/first/last/slice/concat/sort(+key λ)/reverse/join/split/
+  unique/includes/find/findIndex/filter/map/some/every/flat/length`
+- **Text**: `contains/test/match/replace/replaceAll/lower/upper/trim/repeat/
+  substring/format/formatNumber/toNumber/link/style(unstyled output)`
+- **People**: `.name()/.email()`
+- **Empty semantics**: blank operands propagate as blanks (matching Notion),
+  never render as `(computed)`.
 
-Unsupported expressions (`if/lets/ternary`, nested arithmetic like
-`(Price − sum(...)) / Rate`, `.filter()` inside division) render as
-**(computed)**. Multi-year `dateAdd` may differ from Notion by ±1 day due to
-fractional-year rounding.
-
-If you need an unsupported value, read its source columns directly (e.g.
-read `Price`, `type`, and related ticket counts) and compute in the agent.
+Unsupported shapes fall back to `(computed)`; empty formula bodies return "".
+Legacy v1 string-expression formulas (`{"expression": ...}`) are not parsed.
 
 ## Error messages
 
