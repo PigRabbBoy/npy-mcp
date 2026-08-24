@@ -187,3 +187,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Column children now render at depth=2 (was requiring depth≥4). Container blocks (column_list, column, synced_block) no longer consume a depth level — they pass depth through to children. Verified: `get_page(depth=2)` shows column headers + children content.
+
+## [0.6.0] - 2026-08-21
+
+### Added
+- **Formula/rollup evaluator** — `get_database` and `query_database` now compute real values for 12 common formula shapes instead of showing `(computed)`:
+  rollups, `.at(0)` derefs, `.map().join()`, chained derefs (formula→block),
+  `sort().reverse().at(0)` (renders row title), `.length()`, filtered counts/sums,
+  `dateBetween` (Notion floor semantics), `dateAdd` with fractional years/months,
+  and rate×qty multiplication.
+- Stub-aware lazy fetch: relation targets left as property-less stubs by
+  queryCollection are now transparently refetched.
+
+### Changed
+- Complex expressions (`if`/`lets`/nested arithmetic) still render as `(computed)`
+  — read their source columns and compute agent-side when needed.
+- Verified against live BML MA Dashboard: days-until-renewal matches browser
+  values on 9/11 projects exactly (±1 day on multi-year dateAdd rounding).
