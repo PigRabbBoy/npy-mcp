@@ -225,3 +225,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `formatDate(date, format, timezone?)` optional third arg accepted
 - All 18 registry operators confirmed already supported (`unaryMinus/unaryPlus/larger/smaller/largerEq/smallerEq/...`).
 - +4 unit tests (79 total). Live sweep: computed=0 across all dashboard databases.
+
+## [0.7.2] - 2026-08-24
+
+### Security
+- **Timing-safe Bearer comparison**: `BearerTokenVerifier` now uses `hmac.compare_digest` instead of `==`, preventing timing side-channel token extraction.
+- **Bind guard against open exposure**: `run_http` now refuses to start an unauthenticated server on a non-loopback host (`0.0.0.0` etc.) — previously the Docker default entrypoint (HTTP on 0.0.0.0, no auth env) silently exposed full Notion read/write to the network. Override with `NOTION_MCP_ALLOW_OPEN=1` or set `NOTION_MCP_AUTH_TOKEN`.
+
+### Changed
+- Dockerfile: pinned `uv` image tag (`latest` → `0.9.13`) for supply-chain reproducibility; container now runs as non-root user.
+
+### Audited (no action needed)
+- OSV/pip-audit over all 57 locked dependencies: **0 known vulnerabilities**; lockfile already at latest versions.
+- Code scan: no `eval`/`exec`/unsafe deserialization/shell-out; request logging never emits auth headers.
+- New tests: 6 security tests (85 total).

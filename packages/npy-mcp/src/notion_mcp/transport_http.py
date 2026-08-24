@@ -11,6 +11,7 @@ their own Notion session token. Falls back to NOTION_TOKEN_V2 env var.
 
 from __future__ import annotations
 
+import hmac
 import os
 
 from pydantic import AnyHttpUrl
@@ -58,7 +59,7 @@ class BearerTokenVerifier(TokenVerifier):
                 client_id="anonymous",
                 scopes=[],
             )
-        if token == expected:
+        if hmac.compare_digest(token.encode("utf-8"), expected.encode("utf-8")):
             return AccessToken(
                 token=token,
                 client_id="notion-client",
@@ -76,6 +77,20 @@ def run_http(server: MCPServer, host: str = "127.0.0.1", port: int = 8000) -> No
     Clients can send X-Notion-Token header to use their own Notion session.
     """
     auth_token = os.environ.get("NOTION_MCP_AUTH_TOKEN")
+
+    if not auth_token:
+        # Open access + a non-loopback bind would expose full Notion read/write
+        # to the network. Refuse unless explicitly overridden.
+        loopback = host in ("127.0.0.1", "localhost", "::1")
+        allow_open = os.environ.get("NOTION_MCP_ALLOW_OPEN") == "1"
+        if not loopback and not allow_open:
+            raise SystemExit(
+                "Refusing to start unauthenticated MCP server on "
+                f"{host}:{port} — this would expose your Notion workspace to "
+                "the network.\nSet NOTION_MCP_AUTH_TOKEN to require Bearer "
+                "auth, bind to 127.0.0.1 for local-only access, or set "
+                "NOTION_MCP_ALLOW_OPEN=1 to accept the risk."
+            )
 
     if auth_token:
         server = _build_authenticated_server(server, host, port)

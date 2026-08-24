@@ -2,8 +2,8 @@ FROM python:3.12-slim AS builder
 
 WORKDIR /build
 
-# Install uv for fast dependency resolution
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+# Install uv (version-pinned for reproducible/supply-chain-safe builds)
+COPY --from=ghcr.io/astral-sh/uv:0.9.13 /uv /usr/local/bin/uv
 
 # Copy workspace root + all packages (needed for uv workspace resolution)
 COPY pyproject.toml ./
@@ -25,6 +25,10 @@ RUN pip install --no-cache-dir npy-mcp --find-links /wheels/
 
 # Clean up wheels to keep image small
 RUN rm -rf /wheels
+
+# Run as non-root
+RUN useradd --create-home --uid 10001 mcp
+USER mcp
 
 # Default to HTTP transport for remote deployment
 # Override with: docker run ... notion-mcp --transport stdio
