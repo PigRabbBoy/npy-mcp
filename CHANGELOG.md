@@ -204,3 +204,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   — read their source columns and compute agent-side when needed.
 - Verified against live BML MA Dashboard: days-until-renewal matches browser
   values on 9/11 projects exactly (±1 day on multi-year dateAdd rounding).
+
+## [0.7.0] - 2026-08-21
+
+### Added
+- **Full Notion formula interpreter** (`formula_eval.py`) — replaces pattern-matching with a real tokenizer + recursive-descent parser + AST evaluator implementing the complete official function set (notion.com/help/formula-syntax): if/ifs/ternary, let/lets, full math operators & functions, all date functions, list lambdas (filter/map/sort/every/...), text functions, person .name()/.email(), Notion blank-propagation semantics.
+- 17 new unit tests for the interpreter language core (75 total).
+
+### Changed
+- Formula evaluation coverage on live BML MA Dashboard workspace: **(computed) count went from 480+ → 0** across all 8 databases (~720 formula cells in Subscription DB alone).
+- Empty formula bodies now render as "" instead of "(computed)".
