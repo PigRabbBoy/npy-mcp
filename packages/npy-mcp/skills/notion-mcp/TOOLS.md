@@ -449,15 +449,30 @@ Import a CSV file as a new database.
 
 ### Formula and rollup columns
 
-`get_database` and `query_database` show `(computed)` for formula and rollup
-columns. Notion evaluates these **browser-side** (JavaScript) and does not return
-values via the internal API. This is a limitation of the cookie-based API, not a
-bug — the Python library cannot evaluate Notion formulas without reimplementing
-Notion's formula engine.
+`get_database` and `query_database` **evaluate common formula/rollup shapes
+client-side** from the schema definitions (the internal API does not return
+computed values). Supported patterns:
 
-If you need formula/rollup values, read the source relation columns directly
-(e.g. read `ผู้ประสานงาน` column instead of the `ชื่อผู้ประสานงาน` formula that
-derives from it).
+| Pattern | Example |
+|---|---|
+| Rollup (relation → target property) | Dev Slack ID ← contacts.Slack ID |
+| `REF.at(0).REF` | first related row's field |
+| `REF.map(current.REF).join(sep)` | emails joined |
+| `REF.sort(REF).reverse().at(0)` | latest related row (shown as row title) |
+| `A.B` chained deref (incl. formula→block) | Current sub → days left |
+| `REF.length()` | count relations |
+| `filter(... == "x").length()` / `sum(filter(...).map(...))` | counts & sums |
+| `dateBetween(d, now(), unit)` | days until expiry |
+| `dateAdd(d, n, unit)` / `d.dateAdd(n, unit)` | expiry dates |
+| `a.at(0).b * c` | rate × qty |
+
+Unsupported expressions (`if/lets/ternary`, nested arithmetic like
+`(Price − sum(...)) / Rate`, `.filter()` inside division) render as
+**(computed)**. Multi-year `dateAdd` may differ from Notion by ±1 day due to
+fractional-year rounding.
+
+If you need an unsupported value, read its source columns directly (e.g.
+read `Price`, `type`, and related ticket counts) and compute in the agent.
 
 ## Error messages
 

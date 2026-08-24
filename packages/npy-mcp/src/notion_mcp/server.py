@@ -179,6 +179,487 @@ def _render_property(value) -> str:
     return s
 
 
+# ---------------------------------------------------------------------------
+# Formula / rollup evaluation
+#
+# Notion does not return computed formula/rollup values over the internal API
+# — the web client evaluates them in JS from the definitions stored in the
+# collection schema. The schema DOES contain those definitions:
+#   - rollup: {relation_property, target_property, collection_pointer}
+#   - formula: {formula2: {code: [[literal|'‣' fpp-ref], ...]}}
+# We evaluate the common patterns here so MCP reads show real values instead
+# of '(computed)'. Unsupported expressions fall back to None.
+# ---------------------------------------------------------------------------
+
+_SCHEMA_CACHE: dict[str, dict] = {}
+
+
+def _load_schema_cached(client, col_id: str) -> dict:
+    if not col_id:
+        return {}
+    if col_id in _SCHEMA_CACHE:
+        return _SCHEMA_CACHE[col_id]
+    try:
+        col = client.get_collection(col_id)
+        schema = (col.get("schema") or {}) if col else {}
+    except Exception:
+        schema = {}
+    _SCHEMA_CACHE[col_id] = schema
+    return schema
+
+
+_BLOCK_MARKER = "\x00block:"
+
+
+def _get_block_data(client, block_id: str) -> dict:
+    """Fetch raw block data from store, lazily fetching over the wire if missing.
+
+    Related blocks often appear in the local store as STUBS (id/type/parent
+    but no properties) after queryCollection — treat those as missing and
+    force a real fetch.
+    """
+    def _fetch():
+        try:
+            blk = client.get_block(block_id)
+            if blk is not None:
+                return client._store._get("block", block_id)
+        except Exception:
+            pass
+        return None
+
+    data = client._store._get("block", block_id)
+    if not isinstance(data, dict):
+        data = _fetch() or {}
+    # Stub detection: page-type block with missing/empty properties
+    if isinstance(data, dict) and data.get("type") == "page":
+        props = data.get("properties")
+        if not props:
+            data = _fetch() or {}
+    return data if isinstance(data, dict) else {}
+
+
+def _relation_ids(block_data: dict, rel_prop_id: str) -> list[str]:
+    val = (block_data.get("properties") or {}).get(rel_prop_id) or []
+    ids = []
+    for item in val:
+        try:
+            if item[0] == "‣" and item[1]:
+                ids.append(item[1][0][1])
+        except Exception:
+            continue
+    return ids
+
+
+def _read_prop_display(client, block_data: dict, prop_id: str, schema: dict):
+    """Read one property off raw block data as a display-friendly value."""
+    val = (block_data.get("properties") or {}).get(prop_id)
+    if not val:
+        return ""
+    ptype = "?"
+    if schema and prop_id in schema:
+        ptype = schema[prop_id].get("type", "?")
+    try:
+        head = val[0]
+        # date shapes: [['‣', [{'type':'date',...}]]] or [['‣', [['d', {...}]]]]
+        if isinstance(head, list) and head:
+            if isinstance(head[1], dict):
+                d = head[1]
+                return d.get("start_date") or d.get("start_time") or ""
+            if (
+                head[0] == "‣"
+                and isinstance(head[1], list)
+                and head[1]
+                and isinstance(head[1][0], list)
+                and head[1][0]
+                and head[1][0][0] == "d"
+            ):
+                d = head[1][0][1]
+                return d.get("start_date") or d.get("start_time") or ""
+    except Exception:
+        pass
+    try:
+        flat = val[0][0]
+    except Exception:
+        return str(val)
+    # Relation/page pointer: [['‣', [['p', page_id, space_id]]]] → title
+    if flat == "‣":
+        try:
+            target_id = val[0][1][0][1]
+            td = _get_block_data(client, target_id)
+            tprops = (td.get("properties") or {}).get("title") or []
+            if tprops and isinstance(tprops[0], list):
+                return str(tprops[0][0])
+        except Exception:
+            pass
+        return ""
+    if ptype == "number":
+        try:
+            f = float(flat)
+            return int(f) if f.is_integer() else f
+        except Exception:
+            return flat
+    return str(flat)
+
+
+def _smart_read(client, block_data: dict, prop_id: str, schema: dict, depth: int = 0):
+    """Read a property, evaluating formulas/rollups transparently."""
+    if not isinstance(block_data, dict) or not block_data:
+        return ""
+    ptype = (schema.get(prop_id) or {}).get("type", "?") if schema else "?"
+    if ptype in ("formula", "rollup"):
+        try:
+            return _eval_formula_value(client, block_data, prop_id, schema, depth + 1)
+        except Exception:
+            return ""
+    return _read_prop_display(client, block_data, prop_id, schema)
+
+
+def _to_num(v):
+    try:
+        f = float(v)
+        return int(f) if f.is_integer() else f
+    except Exception:
+        return None
+
+
+def _to_date(v):
+    from datetime import date as _date, datetime as _dt
+    if isinstance(v, (_date, _dt)):
+        return v
+    for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M"):
+        try:
+            return _dt.strptime(str(v)[:19], fmt).date()
+        except Exception:
+            continue
+    return None
+
+
+def _formula_expr(prop: dict):
+    """Flatten formula2.code into an expression string with {N} ref placeholders.
+
+    Returns (expr, refs) where refs is a list of fpp metas in order.
+    """
+    refs: list[dict] = []
+    parts: list[str] = []
+    code = (prop.get("formula2") or {}).get("code") or []
+    for seg in code:
+        if isinstance(seg, list) and seg:
+            if seg[0] == "‣" and len(seg) > 1 and seg[1]:
+                try:
+                    meta = seg[1][0][1]
+                    parts.append("{" + str(len(refs)) + "}")
+                    refs.append(meta)
+                    continue
+                except Exception:
+                    pass
+            parts.append(str(seg[0]))
+        elif isinstance(seg, str):
+            parts.append(seg)
+    return "".join(parts), refs
+
+
+def _resolve_ref_rows(client, row_data, ref, cur_schema, depth=0):
+    """Resolve one ref against a row → (rows, target_schema).
+
+    rows is a list of (block_data, target_schema). Handles relation props,
+    formulas that return blocks, and scalar props.
+    """
+    pid = ref.get("property")
+    tschema = _load_schema_cached(client, (ref.get("collection") or {}).get("id"))
+    tprop = tschema.get(pid) or {}
+
+    if tprop.get("type") == "relation":
+        # Related rows live in the relation's TARGET collection
+        rel_target_id = (
+            (tprop.get("collection_pointer") or {}).get("id")
+            or tprop.get("collection_id")
+            or ""
+        )
+        rel_schema = (
+            _load_schema_cached(client, rel_target_id)
+            if rel_target_id else {}
+        )
+        ids = _relation_ids(row_data, pid)
+        return [(_get_block_data(client, i), rel_schema) for i in ids], rel_schema
+    if tprop.get("type") == "formula" or tprop.get("type") == "rollup":
+        inner = _eval_formula_value(client, row_data, pid, cur_schema, depth + 1)
+        if isinstance(inner, str) and inner.startswith(_BLOCK_MARKER):
+            bid = inner[len(_BLOCK_MARKER):]
+            return [( _get_block_data(client, bid), tschema)], tschema
+        if inner not in (None, "") :
+            return [([inner], tschema)], tschema
+        return [], tschema
+    v = _read_prop_display(client, row_data, pid, cur_schema)
+    if v != "" and v is not None:
+        return [([v], tschema)], tschema
+    return [], tschema
+
+
+def _eval_formula_value(
+    client,
+    row_block_data: dict,
+    prop_id: str,
+    schema: dict,
+    depth: int = 0,
+) -> str | None:
+    """Evaluate a formula/rollup column for one row.
+
+    Returns a display string, a {_BLOCK_MARKER}id sentinel for block results,
+    or None when the expression shape is unsupported.
+    """
+    import re
+    from datetime import date as _date, timedelta as _td
+
+    if depth > 5:
+        return None
+    prop = schema.get(prop_id) or {}
+    ptype = prop.get("type")
+
+    # ---- rollup ----
+    if ptype == "rollup":
+        rel_pid = prop.get("relation_property")
+        tgt_pid = prop.get("target_property")
+        if not (rel_pid and tgt_pid):
+            return None
+        cid = (
+            (prop.get("collection_pointer") or {}).get("id")
+            or prop.get("collection_id")
+        )
+        tschema = _load_schema_cached(client, cid)
+        out = []
+        for rid in _relation_ids(row_block_data, rel_pid)[:30]:
+            rd = _get_block_data(client, rid)
+            v = _read_prop_display(client, rd, tgt_pid, tschema)
+            if v != "" and v is not None:
+                out.append(str(v))
+        return ", ".join(out)
+
+    if ptype != "formula":
+        return None
+
+    expr, refs = _formula_expr(prop)
+
+    def R(i):
+        return refs[i] if i < len(refs) else {"property": "?"}
+
+    def rows_of(i, d=depth):
+        return _resolve_ref_rows(client, row_block_data, R(i), schema, d)
+
+    # T_join: {0}.map(current.{1}).join("sep")
+    m = re.fullmatch(r"\{0\}\.map\(current\.\{1\}\)\.join\(\"([^\"]*)\"\)", expr)
+    if m:
+        sep = m.group(1)
+        rows, tsch = rows_of(0)
+        vals = [
+            str(_read_prop_display(client, rd, R(1).get("property"), tsch))
+            for rd, _ in rows
+        ]
+        vals = [v for v in vals if v and v != "None"]
+        return sep.join(vals)
+
+    # T_first: {0}.at(0).{1}
+    m = re.fullmatch(r"\{0\}\.at\(0\)\.\{1\}", expr)
+    if m:
+        rows, _ = rows_of(0)
+        if not rows:
+            return ""
+        rd, _ = rows[0]
+        sch2 = _load_schema_cached(client, (R(1).get("collection") or {}).get("id"))
+        spid = R(1).get("property")
+        if (sch2.get(spid) or {}).get("type") in ("formula", "rollup"):
+            return _eval_formula_value(client, rd, spid, sch2, depth + 1)
+        return _read_prop_display(client, rd, spid, sch2) or ""
+
+    # T_sortmax: {0}.sort(current.{1}).reverse().at(0)  → block marker
+    m = re.fullmatch(r"\{0\}\.sort\(current\.\{1\}\)\.reverse\(\)\.at\(0\)", expr)
+    if m:
+        rows, tsch = rows_of(0)
+        key_pid = R(1).get("property")
+        best_bid, best_key = None, None
+        for rd, _ in rows:
+            kv = _smart_read(client, rd, key_pid, tsch, depth)
+            if kv and (best_key is None or str(kv) > str(best_key)):
+                best_bid, best_key = rd.get("id"), kv
+        if best_bid:
+            return _BLOCK_MARKER + str(best_bid)
+        return None
+
+    # T_chain: {0}.{1}   ({0} resolves to relation rows / formula-block)
+    m = re.fullmatch(r"\{0\}\.\{1\}", expr)
+    if m:
+        rows, _ = rows_of(0)
+        if not rows:
+            return ""
+        rd, _ = rows[0]
+        sch2 = _load_schema_cached(client, (R(1).get("collection") or {}).get("id"))
+        spid = R(1).get("property")
+        if (sch2.get(spid) or {}).get("type") in ("formula", "rollup"):
+            return _eval_formula_value(client, rd, spid, sch2, depth + 1)
+        return _read_prop_display(client, rd, spid, sch2) or ""
+
+    # T_length: {0}.length()
+    m = re.fullmatch(r"\{0\}\.length\(\)", expr)
+    if m:
+        rows, _ = rows_of(0)
+        return str(len(rows))
+
+    # T_count_filter_direct: {0}.filter(current.{1} == "LIT").length()
+    m = re.fullmatch(
+        r'\{0\}\.filter\(current\.\{1\} ?== ?"([^"]*)"\)\.length\(\)', expr
+    )
+    if m:
+        want = m.group(1)
+        rows, tsch = rows_of(0)
+        n = 0
+        for rd, _ in rows:
+            if str(_read_prop_display(client, rd, R(1).get("property"), tsch)) == want:
+                n += 1
+        return str(n)
+
+    # T_count_filter_nested: {0}.filter(current.{1}.at(0).{2} == "LIT").length()
+    m = re.fullmatch(
+        r'\{0\}\.filter\(current\.\{1\}\.at\(0\)\.\{2\} ?== ?"([^"]*)"\)\.length\(\)',
+        expr,
+    )
+    if m:
+        want = m.group(1)
+        rows, _tsch0 = rows_of(0)
+        n = 0
+        for rd, _ in rows:
+            sub_rows, _ = _resolve_ref_rows(
+                client, rd, R(1), schema, depth + 1
+            )
+            if sub_rows:
+                srd, ssch = sub_rows[0]
+                if str(_read_prop_display(client, srd, R(2).get("property"), ssch)) == want:
+                    n += 1
+        return str(n)
+
+    # T_sum_filter_map_nested:
+    # sum({0}.filter(current.{1}.at(0).{2} == "LIT").map(current.{3}))
+    m = re.fullmatch(
+        r'sum\(\{0\}\.filter\(current\.\{1\}\.at\(0\)\.\{2\} ?== ?"([^"]*)"\)'
+        r"\.map\(current\.\{3\}\)\)",
+        expr,
+    )
+    if m:
+        want = m.group(1)
+        rows, _ = rows_of(0)
+        total = 0.0
+        for rd, _ in rows:
+            sub_rows, _ = _resolve_ref_rows(client, rd, R(1), schema, depth + 1)
+            if not sub_rows:
+                continue
+            srd, ssch = sub_rows[0]
+            if str(_read_prop_display(client, srd, R(2).get("property"), ssch)) != want:
+                continue
+            mv = _read_prop_display(client, rd, R(3).get("property"), ssch)
+            num = _to_num(mv)
+            if num is not None:
+                total += num
+        return str(int(total) if float(total).is_integer() else round(total, 4))
+
+    # T_sum_map_length: sum({0}.map(current.{1}.length()))
+    m = re.fullmatch(r"sum\(\{0\}\.map\(current\.\{1\}\.length\(\)\)\)", expr)
+    if m:
+        rows, _ = rows_of(0)
+        total = 0
+        for rd, _ in rows:
+            sub_rows, _ = _resolve_ref_rows(client, rd, R(1), schema, depth + 1)
+            total += len(sub_rows)
+        return str(total)
+
+    # T_sum_filter_map_direct:
+    # sum({0}.map(current.{1})) — e.g. price used sums
+    m = re.fullmatch(r"sum\(\{0\}\.map\(current\.\{1\}\)\)", expr)
+    if m:
+        rows, _ = rows_of(0)
+        total = 0.0
+        for rd, _ in rows:
+            num = _to_num(_read_prop_display(client, rd, R(1).get("property"), None))
+            if num is not None:
+                total += num
+        return str(int(total) if float(total).is_integer() else round(total, 4))
+
+    # T_priceused: {0}.at(0).{1} * {2}
+    m = re.fullmatch(r"\{0\}\.at\(0\)\.\{1\} ?\* ?\{2\}", expr)
+    if m:
+        rows, tsch = rows_of(0)
+        if not rows:
+            return ""
+        rd, sch2 = rows[0]
+        a = _to_num(_read_prop_display(client, rd, R(1).get("property"), sch2))
+        b = _to_num(_read_prop_display(client, row_block_data, R(2).get("property"), schema))
+        if a is None or b is None:
+            return ""
+        prod = a * b
+        return str(int(prod) if float(prod).is_integer() else round(prod, 4))
+
+    # T_dateBetween: dateBetween({0}, now(), "unit")
+    m = re.fullmatch(r'dateBetween\(\s*\{0\}\s*,\s*now\(\)\s*,\s*"(\w+)"\s*\)', expr)
+    if m:
+        unit = m.group(1)
+        from datetime import datetime as _datetime
+        dv = _smart_read(client, row_block_data, R(0).get("property"), schema, depth)
+        d = _to_date(dv)
+        if d is None:
+            return ""
+        # Notion floors using full timestamps: date at local midnight − now
+        now = _datetime.now()
+        diff = (_datetime(d.year, d.month, d.day) - now).total_seconds() / 86400.0
+        import math as _math
+        days = _math.floor(diff)
+        if unit == "weeks":
+            return str(days // 7)
+        if unit == "months":
+            return str(round(days / 30.44))
+        if unit == "years":
+            return str(round(days / 365.25))
+        return str(days)
+
+    def _add_units(d, n, unit):
+        """Add possibly-fractional n units to a date (calendar-exact whole parts)."""
+        if unit == "years":
+            try:
+                base = d.replace(year=d.year + int(n))
+            except ValueError:  # Feb 29
+                base = d.replace(year=d.year + int(n)) - _td(days=1)
+            return base + _td(days=round((n - int(n)) * 365.25))
+        if unit == "months":
+            total = d.month - 1 + int(n)
+            y = d.year + total // 12
+            mo = total % 12 + 1
+            try:
+                base = d.replace(year=y, month=mo)
+            except ValueError:
+                base = d.replace(year=y, month=mo) - _td(days=1)
+            return base + _td(days=round((n - int(n)) * 30.44))
+        if unit == "weeks":
+            return d + _td(days=int(round(n * 7)))
+        return d + _td(days=int(round(n)))
+
+    # T_dateAdd_method: {0}.dateAdd({1}, "unit")
+    m = re.fullmatch(r'\{0\}\.dateAdd\(\s*\{1\}\s*,\s*"(years|months|days|weeks)"\s*\)', expr)
+    if m:
+        unit = m.group(1)
+        d = _to_date(_smart_read(client, row_block_data, R(0).get("property"), schema, depth))
+        n = _to_num(_read_prop_display(client, row_block_data, R(1).get("property"), schema))
+        if d is None or n is None:
+            return ""
+        return str(_add_units(d, n, unit))
+
+    # T_dateAdd_fn: dateAdd({0}, {1}, "unit")
+    m = re.fullmatch(r'dateAdd\(\s*\{0\}\s*,\s*\{1\}\s*,\s*"(years|months|days|weeks)"\s*\)', expr)
+    if m:
+        unit = m.group(1)
+        d = _to_date(_smart_read(client, row_block_data, R(0).get("property"), schema, depth))
+        n = _to_num(_read_prop_display(client, row_block_data, R(1).get("property"), schema))
+        if d is None or n is None:
+            return ""
+        return str(_add_units(d, n, unit))
+
+    return None
+
 def _render_row_props(row, schema_names: dict[str, str] | None = None) -> list[str]:
     """Render a database row's properties as readable key: value lines.
 
@@ -739,19 +1220,46 @@ def get_database(
     rows = collection.get_rows()[:sample_rows] if hasattr(collection, "get_rows") else []
     if rows:
         lines.append(f"## Sample rows ({len(rows)})")
+        # prop id → schema entry map for formula evaluation
+        raw_schema = collection.get("schema") or {}
         for row in rows:
             try:
                 props = row.get_all_properties()
             except Exception:
                 props = {}
+            try:
+                row_data = client._store._get("block", row.id) or {}
+            except Exception:
+                row_data = {}
             parts = []
             for prop in schema:
                 pname = prop.get("name", "?")
                 pslug = prop.get("slug", pname)
-                v = props.get(pslug, "")
-                rendered = _render_property(v)
-                if not rendered and pslug in formula_slugs:
-                    rendered = "(computed)"
+                ptype = prop.get("type", "?")
+                if ptype in ("formula", "rollup"):
+                    pid = prop.get("id")
+                    evaluated = None
+                    if pid and row_data:
+                        try:
+                            evaluated = _eval_formula_value(client, row_data, pid, raw_schema)
+                        except Exception:
+                            evaluated = None
+                    if evaluated is not None and not str(evaluated).startswith("\x00"):
+                        rendered = str(evaluated)
+                    elif evaluated is not None:
+                        bid = str(evaluated)[len(_BLOCK_MARKER):]
+                        bd = _get_block_data(client, bid)
+                        tprops = (bd.get("properties") or {}).get("title") or []
+                        rendered = (
+                            str(tprops[0][0])
+                            if tprops and isinstance(tprops[0], list)
+                            else "(related row)"
+                        )
+                    else:
+                        rendered = "(computed)"
+                else:
+                    v = props.get(pslug, "")
+                    rendered = _render_property(v)
                 parts.append(f"  {pname}: {rendered}")
             lines.append("\n".join(parts))
             lines.append("---")
@@ -829,20 +1337,44 @@ def query_database(
     lines.append("| " + " | ".join(col_names) + " |")
     lines.append("| " + " | ".join("---" for _ in col_names) + " |")
     # Rows
+    raw_schema = collection.get("schema") or {}
     for row in rows:
         try:
             props = row.get_all_properties()
         except Exception:
             props = {}
+        try:
+            row_data = client._store._get("block", row.id) or {}
+        except Exception:
+            row_data = {}
         cells = []
         for prop in schema:
             pslug = prop.get("slug", prop.get("name", "?"))
-            v = props.get(pslug, "")
-            rendered = _render_property(v)
-            # Formula/rollup values are computed browser-side and not returned
-            # by the API — show placeholder instead of empty cell
-            if not rendered and pslug in formula_slugs:
-                rendered = "(computed)"
+            ptype = prop.get("type", "?")
+            if ptype in ("formula", "rollup"):
+                pid = prop.get("id")
+                evaluated = None
+                if pid and row_data:
+                    try:
+                        evaluated = _eval_formula_value(client, row_data, pid, raw_schema)
+                    except Exception:
+                        evaluated = None
+                if evaluated is not None and not str(evaluated).startswith("\x00"):
+                    rendered = str(evaluated)
+                elif evaluated is not None:
+                    bid = str(evaluated)[len(_BLOCK_MARKER):]
+                    bd = _get_block_data(client, bid)
+                    tprops = (bd.get("properties") or {}).get("title") or []
+                    rendered = (
+                        str(tprops[0][0])
+                        if tprops and isinstance(tprops[0], list)
+                        else "(related row)"
+                    )
+                else:
+                    rendered = "(computed)"
+            else:
+                v = props.get(pslug, "")
+                rendered = _render_property(v)
             cells.append(rendered.replace("|", "\\|").replace("\n", " "))
         lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines)
