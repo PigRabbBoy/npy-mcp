@@ -91,3 +91,22 @@ The data type of a Database column (title, text, number, select, date, etc.).
 Determined by the schema's `type` field. The `status` type is handled as an
 alias of `select` in the internal API.
 _Avoid_: column type, field type, data type
+
+**Installer**:
+The one-command bootstrap script (`scripts/install.sh` on macOS/Linux,
+`scripts/install.ps1` on Windows) that prepares uvx, collects credentials,
+and writes MCP configs for the user's chosen AI clients.
+_Avoid_: setup script, bootstrap, one-click install
+
+**Target Client**:
+An AI application the Installer can configure (Claude Desktop, Claude Code,
+Cursor, VS Code, Codex, opencode, Windsurf). Each has its own config file
+path and entry shape; the Installer hides this variety behind one flow.
+_Avoid_: app, editor, host
+
+**Merge Write**:
+The Installer's way of editing a client config: load the existing file,
+change only the `notion-py` entry, save — never touching other entries —
+after copying the original to a timestamped `.bak-*` backup. Re-running the
+Installer updates the existing entry in place.
+_Avoid_: overwrite, replace, reset

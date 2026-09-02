@@ -33,16 +33,50 @@ doesn't.
 
 ## Quick start
 
-**1. Get your token** (2 min): open [app.notion.com](https://app.notion.com) →
-F12 → **Application** → **Cookies** → copy the `token_v2` value (starts with
-`v03%3A...`). [Details](#getting-your-token_v2)
+**One command** — the installer checks for `uvx` (installs it if missing),
+asks which AI clients to set up, walks you through getting your
+`NOTION_TOKEN_V2`, and writes the config for each client (existing MCP
+servers are kept; a backup is made before any edit):
 
-**2. Pick an install option and paste the config:**
+**macOS / Linux:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/install.sh | bash
+```
 
-<details open>
-<summary><b>Option 1 — uvx (recommended, no install)</b></summary>
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/install.ps1 | iex
+```
 
-Install [uv](https://docs.astral.sh/uv/) once: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+The installer asks:
+1. **Which AI clients?** — multiselect: Claude Desktop, Claude Code, Cursor,
+   VS Code, Codex, opencode, Windsurf
+2. **`NOTION_TOKEN_V2`** — with on-screen instructions (DevTools →
+   Application → Cookies → `token_v2`)
+3. **`NOTION_SPACE_ID`** — optional; shown how to find it if you're in
+   multiple workspaces
+4. **Write tools?** — opt-in (`NOTION_ALLOW_WRITE`), default read-only
+
+Then fully restart your AI client and ask:
+> "Find pages about project status in Notion" — that's it.
+
+**Scripting / CI?** Use flags to skip the prompts:
+```bash
+curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/install.sh | bash -s -- \
+  --client claude-desktop --client cursor \
+  --token "v03%3AeyJ..." --allow-write
+```
+
+**Uninstall:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/uninstall.sh | bash
+```
+
+<details>
+<summary>Prefer manual setup? (per-client configs, Docker, pip)</summary>
+
+**uvx (no install needed)** — install [uv](https://docs.astral.sh/uv/) once:
+`curl -LsSf https://astral.sh/uv/install.sh | sh`
 
 **Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows) / **Cursor** (`.cursor/mcp.json`) / **Claude Code** (`.mcp.json`):
 ```json
@@ -80,13 +114,8 @@ command = "uvx"
 args = ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/npy-mcp", "notion-mcp"]
 env = { NOTION_TOKEN_V2 = "v03%3AeyJ..." }
 ```
-</details>
 
-<details>
-<summary><b>Option 2 — Docker (no Python/uv needed)</b></summary>
-
-Same configs as above, but with docker as the command:
-
+**Docker** (no Python/uv needed) — same configs as above but with docker as the command:
 ```json
 {
   "mcpServers": {
@@ -99,37 +128,19 @@ Same configs as above, but with docker as the command:
 }
 ```
 
-Codex: `command = "docker"`, `args = ["run", "--rm", "-i", "-e", "NOTION_TOKEN_V2", "pigrabbboy/npy-mcp:latest", "--transport", "stdio"]`
-</details>
-
-<details>
-<summary><b>Option 3 — pip install (Python developers)</b></summary>
-
+**pip install** (Python developers):
 ```bash
 pip install "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/npy-mcp"
 ```
-
-```json
-{
-  "mcpServers": {
-    "notion-py": {
-      "command": "python",
-      "args": ["-m", "notion_mcp"],
-      "env": { "NOTION_TOKEN_V2": "v03%3AeyJ..." }
-    }
-  }
-}
-```
+Then use `"command": "python"`, `"args": ["-m", "notion_mcp"]` in the config.
 </details>
 
-**3. Restart your AI client and ask it something:**
-> "Find pages about project status in Notion" — that's it.
-
 <details>
-<summary>💡 Want write access too (create/update/delete)?</summary>
+<summary>💡 About write access (create/update/delete)</summary>
 
-The server starts in **read-only** mode (8 read tools). To unlock the 17 write
-tools, add one line to the `env` block:
+The server starts in **read-only** mode (8 read tools). The installer asks
+whether to enable writes; to change it later, add one line to the `env` block
+or just re-run the installer:
 
 ```json
 "env": {

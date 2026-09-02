@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **One-command installer** ([ADR-0009](docs/adr/0009-shell-installer-merge-write.md)):
+  - macOS/Linux: `curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/install.sh | bash`
+  - Windows: `irm https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/install.ps1 | iex`
+  - Multiselect target clients (Claude Desktop, Claude Code, Cursor, VS Code,
+    Codex, opencode, Windsurf), guided `NOTION_TOKEN_V2` / `NOTION_SPACE_ID`
+    collection with how-to hints, opt-in write gate, automatic uv install,
+    and Merge Write into each client's config (timestamped backups, other
+    MCP servers untouched). Re-running updates values in place.
+  - Flag mode for scripting: `--client`, `--token`, `--space`,
+    `--allow-write`, `--scope global|project`.
+- Paired uninstallers: `scripts/uninstall.sh` / `scripts/uninstall.ps1` —
+  remove only the `notion-py` entry from chosen clients.
+
 ## [0.11.0] - 2026-09-02
 
 ### Fixed
