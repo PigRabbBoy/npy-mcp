@@ -40,7 +40,7 @@ This is a monorepo with three packages:
 |---|---|---|
 | `npy-core` | Core library (NotionClient, Block, Collection, markdown) | `uv add npy-core` |
 | `npy-cli` | CLI tool with 15 commands | `uv add npy-cli` |
-| `npy-mcp` | MCP server (stdio + HTTP) with 15 tools | `uv add npy-mcp` |
+| `npy-mcp` | MCP server (stdio + HTTP) with 23 tools | `uv add npy-mcp` |
 
 ## CLI
 
@@ -302,7 +302,39 @@ env = { NOTION_TOKEN_V2 = "v03%3AeyJ..." }
 
 #### Enabling write tools (stdio)
 
-Add `"NOTION_ALLOW_WRITE": "1"` to the `env` block in any of the configs above to unlock 9 write tools (create, update, delete, move, etc.). Without it, only 6 read tools are available.
+Add `"NOTION_ALLOW_WRITE": "1"` to the `env` block in any of the configs above to unlock 16 write tools (create, update, delete, move, etc.). Without it, only 7 read tools are available.
+
+#### All 23 tools
+
+| Tool | What it does |
+|---|---|
+| **Read (7)** | |
+| `search` | Search pages/blocks across the workspace |
+| `get_page` | Page content as Markdown or JSON (depth control) |
+| `get_block` | Single block by URL/ID |
+| `get_image` | Download an image block/file and return it inline |
+| `list_pages` | Recent pages (workspace or under a parent) |
+| `get_database` | Database schema + sample rows |
+| `query_database` | Filter/sort rows (full formula evaluation) |
+| **Write (16)** — requires `NOTION_ALLOW_WRITE=1` | |
+| `create_page` | New page under a parent, with icon |
+| `append_blocks` | Add blocks (13 types) to a page |
+| `update_block` | Edit text / toggle checked |
+| `delete_block` | Trash or permanently remove |
+| `move_block` | Reparent a block |
+| `add_alias` | Alias a page into another parent |
+| `add_database_row` | Insert a row (props by name) |
+| `update_database_row` | Edit row properties |
+| `delete_database_row` | Remove a row |
+| `create_database` | Inline or full-page database with schema |
+| `add_column` | Add a property column (all types) |
+| `create_media` | Attach image/file via URL or upload |
+| `create_embed` | Embed (20 providers) |
+| `create_table` | Simple table block |
+| `create_columns` | Column layout with N children |
+| `import_csv` | CSV → inline database |
+
+Full args/types/examples: [`TOOLS.md`](packages/npy-mcp/skills/notion-mcp/TOOLS.md).
 
 ### Remote (HTTP) — for shared/team access
 
@@ -389,7 +421,7 @@ cp -r packages/npy-mcp/skills/notion-mcp ~/.agents/skills/notion-mcp
 
 Contains:
 - `SKILL.md` — trigger description, tool selection guide, common workflows, write safety
-- `TOOLS.md` — full reference for all 15 tools (args, types, examples, error messages)
+- `TOOLS.md` — full reference for all 23 tools (args, types, examples, error messages)
 
 ### Release skill
 
@@ -515,7 +547,7 @@ notion-py/
 │   │   ├── render.py             ← Markdown/JSON formatters
 │   │   └── client_factory.py     ← Client builder from auth config
 │   └── npy-mcp/src/notion_mcp/   ← MCP server
-│       ├── server.py             ← MCPServer + 15 tools
+│       ├── server.py             ← MCPServer + 23 tools
 │       ├── transport_http.py     ← HTTP transport + Bearer auth
 │       └── __main__.py           ← Entry point (--transport stdio|http)
 ├── tests/                        ← 57 tests (unit + integration via vcr.py)
