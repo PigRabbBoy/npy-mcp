@@ -418,6 +418,17 @@ class RecordStore(object):
             self.run_local_operation(**operation)
 
     def run_local_operation(self, table, id, path, command, args):
+        # schema updates arrive wrapped (updateCollectionPropertySchema +
+        # primitiveOp) — unwrap to a plain schema update for the local store
+        if command == "updateCollectionPropertySchema":
+            primitive = (args or {}).get("primitiveOp") or {}
+            command = primitive.get("command", "update")
+            args = primitive.get("args", {})
+            if isinstance(args, dict) and len(args) == 1 and path == ["schema"]:
+                pid, prop = next(iter(args.items()))
+                path = ["schema", pid]
+                args = prop
+                command = "update"
 
         with self._mutex:
             path = deepcopy(path)

@@ -571,6 +571,7 @@ class NotionClient(object):
             "transactions": [
                 {
                     "id": str(uuid.uuid4()),
+                    "spaceId": space_id,
                     "debug": {},
                     "operations": new_ops,
                 }

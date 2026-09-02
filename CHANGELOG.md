@@ -6,6 +6,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-02
+
+### Fixed
+- **`reverse_name` on relation columns now actually creates the two-way
+  synced property on the target database** (issue #5). Previously
+  `autoRelate` was recorded on the forward property but no reverse property
+  was ever created — relations were silently one-way and rollups naming the
+  missing reverse failed. Notion's own client builds two-way relations by
+  writing a property on *both* collections in one transaction (captured live
+  via `CollectionSettingsSetupRelation.handleAddRelation`); npy-mcp now
+  replicates that exactly: forward + reverse properties with symmetric
+  `"property"` back-references, `version: v2`, `autoRelate` disabled.
+- Schema writes now use Notion's current `updateCollectionPropertySchema`
+  command with a `primitiveOp` wrapper — plain `set`/`update` on the schema
+  path is rejected with 400 by the API. The record store unwraps these ops
+  locally so caches stay consistent.
+- A forward relation carrying a `property` back-reference is rejected by
+  Notion (400) unless the reverse property lands in the same transaction —
+  `create_database` and `add_column` now write forward+reverse pairs
+  together. Self-referencing relations (target == own database) use a single
+  property pointing at itself, matching Notion's own shape.
+- **Row-level two-way sync**: setting a two-way relation on a row
+  (`row.Prop = [...]`) now maintains the reverse side automatically (adds
+  this row to the targets' reverse property, removes it from rows that were
+  unlinked) — Notion's server only does this for its own client.
+- Rollup failures in `add_column` now surface the real reason
+  (`Cannot add rollup column: relation property 'X' not found…`) instead of
+  a bare `Error executing tool add_column`.
+- `create_database`/`add_column` docstrings: `"limit": 1` documented
+  correctly as capping the relation at one linked row (was misleadingly
+  described as "single-property mode", easy to confuse with the official
+  API's one-way `single_property`).
+
+### Added
+- `build_collection_schema_update()` in `notion.operations` — builds the
+  `updateCollectionPropertySchema` op shape for schema writes.
+- `CollectionRowBlock._sync_two_way_relation()` — maintains the reverse
+  property on linked rows in one transaction.
+- 4 new tests (126 total): two-way relation op shape, store unwrapping of
+  `updateCollectionPropertySchema`, row-level reverse sync add/remove.
+
+### Verified live
+- Forward+reverse pairs created via `add_column(reverse_name=…)` and
+  `create_database(columns=[{type: relation, reverse_name: …}])` render as
+  two-way synced relations in the Notion UI (screenshot-verified), and
+  linking a row through the forward property populates the reverse property
+  on the target row.
+
 ## [0.2.8] - 2026-08-21
 
 ### Fixed

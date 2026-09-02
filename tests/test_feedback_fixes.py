@@ -174,7 +174,21 @@ class TestBuildSchema:
             None,
             "sp1",
         )
-        assert prop["autoRelate"] == {"enabled": True, "name": "Built-on"}
+        # two-way shape captured from Notion's own client: a "property"
+        # back-ref + version v2, autoRelate disabled
+        assert prop["autoRelate"] == {"enabled": False}
+        assert prop["version"] == "v2"
+        assert isinstance(prop["property"], str) and len(prop["property"]) == 4
+
+    def test_relation_no_reverse(self):
+        from notion_mcp.server import _build_relation_prop
+
+        prop = _build_relation_prop(
+            {"name": "R", "target_database_id": "x"}, None, "sp1"
+        )
+        assert prop["autoRelate"] == {"enabled": False}
+        assert "property" not in prop
+        assert "version" not in prop
 
     def test_relation_requires_target(self):
         from notion_mcp.server import _build_relation_prop
@@ -398,3 +412,118 @@ class TestAddComment:
 
         src = inspect.getsource(NotionClient.add_comment)
         assert '["comments"]' in src and '"listAfter"' in src
+
+
+# ---- issue #5: two-way relations -------------------------------------------
+
+
+class TestTwoWayRelationOps:
+    def test_build_collection_schema_update_shape(self):
+        from notion.operations import build_collection_schema_update
+
+        op = build_collection_schema_update("coll1", "ab12", {"name": "X"})
+        assert op["command"] == "updateCollectionPropertySchema"
+        assert op["table"] == "collection"
+        assert op["path"] == ["schema"]
+        assert op["args"]["primitiveOp"] == {
+            "command": "update",
+            "args": {"ab12": {"name": "X"}},
+        }
+
+    def test_store_unwraps_primitive_op(self):
+        import threading
+
+        from notion.store import RecordStore
+
+        store = RecordStore.__new__(RecordStore)
+        store._mutex = threading.Lock()
+        store._values = {
+            "collection": {
+                "c1": {"schema": {"title": {"name": "Name", "type": "title"}}}
+            }
+        }
+        store._update_record = (
+            lambda table, id, value=None, role=None, _s=store: (
+                _s._values[table].__setitem__(id, value) if value else None
+            )
+        )
+        store.run_local_operation(
+            table="collection",
+            id="c1",
+            path=["schema"],
+            command="updateCollectionPropertySchema",
+            args={
+                "primitiveOp": {
+                    "command": "update",
+                    "args": {"ab12": {"name": "Rel", "type": "relation"}},
+                }
+            },
+        )
+        schema = store._values["collection"]["c1"]["schema"]
+        assert schema["ab12"]["name"] == "Rel"
+        assert "title" in schema
+
+    def test_sync_two_way_relation_adds_and_removes(self):
+        import json as _json
+        import threading
+
+        from notion.collection import CollectionRowBlock
+
+        submitted = []
+
+        class FakeClient:
+            def get_block(self, bid):
+                return blocks.get(bid)
+
+            def submit_transaction(self, ops):
+                submitted.extend(ops)
+
+        client = FakeClient()
+
+        def _fake_row(rid, props):
+            b = CollectionRowBlock.__new__(CollectionRowBlock)
+            object.__setattr__(b, "_id", rid)
+            object.__setattr__(b, "_client", client)
+            object.__setattr__(
+                b,
+                "get",
+                lambda path, default=None, force_refresh=False, _p=props: (
+                    _p.get(path[-1])
+                    if path and path[0] == "properties"
+                    else default
+                ),
+            )
+            return b
+
+        blocks = {
+            "rowOld": _fake_row("rowOld", {"rev1": [["‣", [["p", "rowA"]]], [","]]}),
+            "rowNew": _fake_row("rowNew", {"rev1": []}),
+        }
+
+        row = CollectionRowBlock.__new__(CollectionRowBlock)
+        object.__setattr__(row, "_client", client)
+        object.__setattr__(row, "_id", "rowA")
+        object.__setattr__(
+            row,
+            "get",
+            lambda path, default=None, force_refresh=False: (
+                [["‣", [["p", "rowOld"]]], [","]]
+                if path == ["properties", "fwd1"]
+                else default
+            ),
+        )
+
+        prop = {"id": "fwd1", "type": "relation", "property": "rev1"}
+        new_val = [["‣", [["p", "rowNew"]]]]
+        row._sync_two_way_relation(prop, new_val)
+
+        assert len(submitted) == 3
+        # op 1: forward write on self
+        assert submitted[0]["id"] == "rowA"
+        assert submitted[0]["path"] == ["properties", "fwd1"]
+        # op 2: reverse add on the new target
+        assert submitted[1]["id"] == "rowNew"
+        assert ["‣", [["p", "rowA"]]] in submitted[1]["args"]
+        # op 3: reverse removal on the old target (rowA gone from its list)
+        assert submitted[2]["id"] == "rowOld"
+        assert "rowA" not in _json.dumps(submitted[2]["args"])

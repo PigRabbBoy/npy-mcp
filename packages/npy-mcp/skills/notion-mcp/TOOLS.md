@@ -326,8 +326,13 @@ Create a new database (collection) under a parent page.
 
 **Example call:**
 ```json
-{"parent_id": "page-id", "title": "Tasks", "columns": "[{\"name\":\"Task\",\"type\":\"title\"},{\"name\":\"Status\",\"type\":\"select\",\"options\":[\"Todo\",\"Done\"]}]"}
+{"parent_id": "page-id", "title": "Tasks", "columns": "[{\"name\":\"Task\",\"type\":\"title\"},{\"name\":\"Status\",\"type\":\"select\",\"options\":[\"Todo\",\"Done\"]},{\"name\":\"Project\",\"type\":\"relation\",\"target_database_id\":\"<db-id>\",\"reverse_name\":\"Tasks\"}]"}
 ```
+
+**Two-way relations:** a relation spec with `reverse_name` creates a mirrored
+property on the target database in the same transaction (Notion's native
+two-way shape). Self-relations (target = same database) use one property
+pointing at itself.
 
 **Returns:** Database block ID.
 
@@ -342,7 +347,7 @@ Add a column to an existing database.
 | `database_id` | string | — | Database URL or ID (required) |
 | `name` | string | — | Column name (required) |
 | `type` | string | — | Column type (required) |
-| `options` | string | "" | select/multi_select/status: JSON array of values. relation: `{"target_database_id","limit":1?,"reverse_name"?}` — omitting `reverse_name` creates a one-way relation with NO back-reference column (`autoRelate.enabled=false`); passing it enables two-way sync and is the only way to build a self-relation. formula: `{"expression"}` (refs as `{"Prop Name"}`). rollup: `{"relation_property","target_property","aggregation"?}` |
+| `options` | string | "" | select/multi_select/status: JSON array of values. relation: `{"target_database_id","limit":1?,"reverse_name"?}` — `reverse_name` creates a two-way synced relation: a mirrored property on the target database (forward+reverse written in one transaction); omitting it creates a one-way relation. formula: `{"expression"}` (refs as `{"Prop Name"}`). rollup: `{"relation_property","target_property","aggregation"?}` |
 
 **Example call:**
 ```json
@@ -488,6 +493,8 @@ Legacy v1 string-expression formulas (`{"expression": ...}`) are not parsed.
 | `401 Client Error: Unauthorized` | token_v2 is invalid or expired | Extract a fresh `token_v2` from browser DevTools |
 | `Write commands require NOTION_ALLOW_WRITE=1` | Write attempted without gate env var | Set `NOTION_ALLOW_WRITE=1` on the server |
 | `Unsupported field: <name>` | `update_block` called with invalid field | Use `"title"` or `"checked"` only |
+| `Cannot add rollup column: relation property 'X' not found…` | Rollup names a relation property that doesn't exist on this database | Check the property name with `get_database(full_schema=true)` first |
+| `Relation target database '<id>' not found` | Relation target doesn't exist or token lacks access | Verify the target database ID |
 
 ### Column blocks and depth >1
 

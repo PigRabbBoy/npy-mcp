@@ -341,7 +341,10 @@ Full args/types/examples: [`TOOLS.md`](packages/npy-mcp/skills/notion-mcp/TOOLS.
 #### Schema provisioning example
 
 Relation, formula, and rollup columns are fully supported (verified rendering
-in the Notion web UI):
+in the Notion web UI). `reverse_name` creates a **two-way synced relation** —
+a real mirrored property on the target database (forward + reverse written in
+one transaction, matching Notion's own client), and row-level links stay in
+sync on both sides:
 
 ```json
 [

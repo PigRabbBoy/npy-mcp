@@ -1460,8 +1460,10 @@ def _build_collection_schema(col_specs: list, client=None, parent_space_id: str 
     Each spec: {"name": str, "type": str, "options": [str, ...]}
     Relation specs additionally accept:
         "target_database_id": URL/ID of the related database (required),
-        "limit": 1 for single-property mode (default: unlimited/dual),
-        "reverse_name": custom name for the two-way sync property.
+        "limit": 1 caps the relation at one linked row,
+        "reverse_name": creates a two-way synced property on the target
+            database (written via a forward+reverse schema transaction; see
+            create_database).
     Formula specs accept "expression" (Notion formula2 source).
     Rollup specs accept "relation_property" (name), "target_property" (name),
         and optional "aggregation" (count, sum, percent_checked, latest_date...).
@@ -1482,6 +1484,8 @@ def _build_collection_schema(col_specs: list, client=None, parent_space_id: str 
             ]
         if ptype == "relation":
             rel = _build_relation_prop(spec, client, parent_space_id)
+            if rel.get("property") and not spec.get("_reverse_prop_id"):
+                spec["_reverse_prop_id"] = rel["property"]
             prop.update(rel)
         elif ptype == "formula":
             expr = spec.get("expression", "")
@@ -1546,7 +1550,14 @@ def _resolve_collection_id(client, ref: str) -> str:
 
 
 def _build_relation_prop(spec: dict, client, parent_space_id: str) -> dict:
-    """Build the schema fragment for a relation property."""
+    """Build the schema fragment for a relation property.
+
+    If "reverse_name" is set, returns a fragment carrying the symmetric
+    two-way shape observed in Notion's own client: the forward prop holds
+    "property": <reverse_prop_id> and "version": "v2". The caller is
+    responsible for writing the matching reverse property into the target
+    collection's schema (see _apply_reverse_relation).
+    """
     target_ref = spec.get("target_database_id", "")
     if not target_ref:
         raise ValueError(
@@ -1557,6 +1568,7 @@ def _build_relation_prop(spec: dict, client, parent_space_id: str) -> dict:
     space_id = parent_space_id or (
         client.current_space.id if client and client.current_space else ""
     )
+    import uuid
     prop = {
         "collection_id": target_id,
         "collection_pointer": {
@@ -1567,10 +1579,13 @@ def _build_relation_prop(spec: dict, client, parent_space_id: str) -> dict:
     }
     if spec.get("limit") == 1:
         prop["limit"] = 1
-    prop["autoRelate"] = {"enabled": False}
     reverse_name = spec.get("reverse_name")
     if reverse_name:
-        prop["autoRelate"] = {"enabled": True, "name": reverse_name}
+        # Notion's UI always writes autoRelate disabled; two-way sync is
+        # achieved by a real property on the other collection, not autoRelate.
+        prop["version"] = "v2"
+        prop["property"] = spec.get("_reverse_prop_id") or uuid.uuid4().hex[:4]
+    prop["autoRelate"] = {"enabled": False}
     return prop
 
 
@@ -1989,8 +2004,9 @@ if _WRITE_ENABLED:
                 created_by, last_edited_by, status.
                 Relation columns: {"name","type":"relation",
                 "target_database_id":"<db url/id>","limit":1 (optional,
-                single-property mode),"reverse_name":"Backrefs" (optional,
-                two-way sync name)}.
+                caps the relation at one linked row),"reverse_name":
+                "Backrefs" (optional, creates a two-way synced property
+                on the target database)}.
                 Formula columns: {"name","type":"formula",
                 "expression":"if({\"Done\"}, \"✅\", \"⬜\")"} — reference
                 properties with {"Name"}.
@@ -2040,8 +2056,21 @@ if _WRITE_ENABLED:
             # schema dict is built BEFORE the collection exists, so fpp metas
             # carry the placeholder; Notion resolves {name,property} fine when
             # the collection pointer matches the enclosing collection)
+            # Two-way relations: a forward prop with a "property" back-ref is
+            # rejected unless the reverse prop lands in the same transaction,
+            # and create_record can't batch cross-collection schema writes —
+            # so strip reverse-bearing relations out of the create payload and
+            # write each forward+reverse pair afterwards.
+            deferred = []
+            for spec in col_specs:
+                if spec.get("type") == "relation" and spec.get("reverse_name"):
+                    fwd_pid = spec.get("id")
+                    fwd = schema.pop(fwd_pid, None)
+                    if fwd:
+                        deferred.append((spec, fwd_pid, fwd))
         else:
             schema = {"title": {"name": "Name", "type": "title"}}
+            deferred = []
 
         # Create database block as child of parent
         if full_page:
@@ -2058,6 +2087,41 @@ if _WRITE_ENABLED:
 
         # Add a default table view
         cvb.views.add_new(view_type="table")
+
+        # Two-way relations: forward + reverse pair in ONE transaction each
+        # (autoRelate alone does not create a reverse property, and Notion
+        # rejects a dangling back-reference).
+        if deferred:
+            from notion.operations import build_collection_schema_update
+            space_id = client.current_space.id if client.current_space else ""
+            ops = [build_collection_schema_update(collection_id, fwd_pid, fwd)
+                   for _, fwd_pid, fwd in deferred]
+            for spec, fwd_pid, fwd in deferred:
+                reverse_prop = {
+                    "name": spec.get("reverse_name") or spec.get("name"),
+                    "type": "relation",
+                    "collection_id": collection_id,
+                    "collection_pointer": {
+                        "id": collection_id,
+                        "table": "collection",
+                        "spaceId": space_id,
+                    },
+                    "property": fwd_pid,
+                    "version": "v2",
+                    "autoRelate": {"enabled": False},
+                }
+                target_id = fwd.get("collection_id", "")
+                if target_id and target_id != collection_id:
+                    ops.append(build_collection_schema_update(
+                        target_id, fwd["property"], reverse_prop
+                    ))
+                else:
+                    # self-referencing: single prop points at itself
+                    fwd["property"] = fwd_pid
+                    ops = [build_collection_schema_update(
+                        collection_id, fwd_pid, fwd
+                    )]
+            client.submit_transaction(ops)
         return cvb.id
 
     @mcp.tool()
@@ -2079,8 +2143,9 @@ if _WRITE_ENABLED:
             options: For select/multi_select/status: JSON array of option
                 values, e.g. ["High","Medium","Low"].
                 For relation: JSON spec {"target_database_id":"<db url/id>",
-                "limit":1 (optional single),"reverse_name":"Backrefs"
-                (optional two-way sync name)}.
+                "limit":1 (optional, caps the relation at one linked row),
+                "reverse_name":"Backrefs" (optional, creates a two-way
+                synced property on the target database)}.
                 For formula: JSON spec {"expression":"..."} — reference
                 properties with {"Name"}.
                 For rollup: JSON spec {"relation_property":"Rel",
@@ -2119,6 +2184,10 @@ if _WRITE_ENABLED:
             space_id = client.current_space.id if client.current_space else ""
             if type == "relation":
                 prop.update(_build_relation_prop(spec, client, space_id))
+                # remember where the forward prop will land so the reverse
+                # property can reference it back
+                spec["id"] = prop_id
+                spec["_reverse_prop_id"] = prop.get("property")
             elif type == "formula":
                 expr = spec.get("expression", "")
                 if not expr:
@@ -2156,12 +2225,66 @@ if _WRITE_ENABLED:
                 }
             elif type == "rollup":
                 spec["_own_schema"] = collection.get("schema") or {}
-                prop.update(_build_rollup_prop(spec, client))
+                try:
+                    prop.update(_build_rollup_prop(spec, client))
+                except ValueError as exc:
+                    return f"Cannot add rollup column: {exc}"
 
-        # Add to schema
+        # Build the write. IMPORTANT: a forward relation prop carrying
+        # "property": <reverse_pid> is REJECTED (400) unless the reverse
+        # property is written in the SAME transaction — Notion validates the
+        # back-reference. So two-way relations must submit both ops together.
+        from notion.operations import build_collection_schema_update
         current_schema = collection.get("schema") or {}
         current_schema[prop_id] = prop
-        collection.set("schema", current_schema)
+
+        if type == "relation" and prop.get("property"):
+            target_id = prop.get("collection_id", "")
+            own_coll_id = collection.id
+            reverse_prop = {
+                "name": spec.get("reverse_name") or name,
+                "type": "relation",
+                "collection_id": own_coll_id,
+                "collection_pointer": {
+                    "id": own_coll_id,
+                    "table": "collection",
+                    "spaceId": space_id,
+                },
+                "property": prop_id,
+                "version": "v2",
+                "autoRelate": {"enabled": False},
+            }
+            if target_id and target_id != own_coll_id:
+                target_coll = client.get_collection(target_id)
+                if target_coll is None:
+                    raise ValueError(
+                        f"Relation target database '{target_id}' not found — "
+                        "cannot create reverse property"
+                    )
+                client.submit_transaction([
+                    build_collection_schema_update(own_coll_id, prop_id, prop),
+                    build_collection_schema_update(
+                        target_id, prop["property"], reverse_prop
+                    ),
+                ])
+                return (
+                    f"Added column '{name}' (type: relation, id: {prop_id}) "
+                    f"with reverse '{reverse_prop['name']}' "
+                    f"(id: {prop['property']}) on the target database"
+                )
+            else:
+                # self-referencing: one prop serves both directions — point
+                # it at itself, like Notion's own self-referencing relations
+                prop["property"] = prop_id
+                current_schema[prop_id] = prop
+                client.submit_transaction([
+                    build_collection_schema_update(own_coll_id, prop_id, prop)
+                ])
+        else:
+            client.submit_transaction([
+                build_collection_schema_update(collection.id, prop_id, prop)
+            ])
+
         return f"Added column '{name}' (type: {type}, id: {prop_id}) to database"
 
     @mcp.tool()

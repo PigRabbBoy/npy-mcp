@@ -5,7 +5,9 @@ from tzlocal import get_localzone
 from uuid import uuid1
 
 import mimetypes
+import json
 import os
+import re
 
 import requests
 
@@ -621,7 +623,75 @@ class CollectionRowBlock(PageBlock):
 
         path, val = self._convert_python_to_notion(val, prop, identifier=identifier)
 
-        self.set(path, val)
+        # Two-way relation: Notion's server only maintains the mirror
+        # property when edits come from its own client. For API writes we
+        # must update the reverse side ourselves (mirrors the captured UI
+        # behavior where both sides always agree).
+        if prop["type"] == "relation" and prop.get("property"):
+            self._sync_two_way_relation(prop, val)
+        else:
+            self.set(path, val)
+
+    def _sync_two_way_relation(self, prop, new_val):
+        """Write a two-way relation value on BOTH rows (this row and the
+        linked rows' reverse property) in one transaction."""
+
+        def _ids(val):
+            # segment shape: ["‣", [["p", <row_id>, ...]]]
+            ids = []
+            for seg in val or []:
+                if (
+                    isinstance(seg, list)
+                    and len(seg) == 2
+                    and seg[0] == "‣"
+                    and isinstance(seg[1], list)
+                    and seg[1]
+                    and isinstance(seg[1][0], list)
+                    and seg[1][0]
+                    and seg[1][0][0] == "p"
+                ):
+                    ids.append(seg[1][0][1])
+            return ids
+
+        reverse_pid = prop["property"]
+        ops = [build_operation(
+            id=self.id, path=["properties", prop["id"]], args=new_val
+        )]
+        old_ids = set(_ids(self.get(["properties", prop["id"]])))
+        new_ids = set(_ids(new_val))
+        added, removed = new_ids - old_ids, old_ids - new_ids
+        for target_id in added:
+            block = self._client.get_block(target_id)
+            if block is None:
+                continue
+            existing = block.get(["properties", reverse_pid]) or []
+            if self.id in _ids(existing):
+                continue
+            new_list = existing + [["‣", [["p", self.id]]]] if existing else [["‣", [["p", self.id]]]]
+            ops.append(build_operation(
+                id=target_id, path=["properties", reverse_pid], args=new_list
+            ))
+        for target_id in removed:
+            block = self._client.get_block(target_id)
+            if block is None:
+                continue
+            existing = block.get(["properties", reverse_pid]) or []
+            if self.id not in _ids(existing):
+                continue
+            filtered = [
+                seg for seg in existing
+                if not (isinstance(seg, list) and len(seg) == 2
+                        and seg[0] == "‣" and isinstance(seg[1], list) and seg[1]
+                        and isinstance(seg[1][0], list) and seg[1][0]
+                        and seg[1][0][0] == "p" and seg[1][0][1] == self.id)
+            ]
+            # strip trailing separator
+            while filtered and filtered[-1] == [","]:
+                filtered.pop()
+            ops.append(build_operation(
+                id=target_id, path=["properties", reverse_pid], args=filtered
+            ))
+        self._client.submit_transaction(ops)
 
     def _convert_python_to_notion(self, val, prop, identifier="<unknown>"):
 
