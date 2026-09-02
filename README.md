@@ -314,8 +314,8 @@ Add `"NOTION_ALLOW_WRITE": "1"` to the `env` block in any of the configs above t
 | `get_block` | Single block by URL/ID |
 | `get_image` | Download an image block/file and return it inline |
 | `list_pages` | Recent pages (workspace or under a parent) |
-| `get_database` | Database schema + sample rows |
-| `query_database` | Filter/sort rows (full formula evaluation) |
+| `get_database` | Database schema + sample rows (`full_schema` dumps relation/rollup/formula definitions for provisioning) |
+| `query_database` | Filter/sort rows (full formula evaluation; `fetch_all` for every row) |
 | **Write (16)** — requires `NOTION_ALLOW_WRITE=1` | |
 | `create_page` | New page under a parent, with icon |
 | `append_blocks` | Add blocks (13 types) to a page |
@@ -326,8 +326,8 @@ Add `"NOTION_ALLOW_WRITE": "1"` to the `env` block in any of the configs above t
 | `add_database_row` | Insert a row (props by name) |
 | `update_database_row` | Edit row properties |
 | `delete_database_row` | Remove a row |
-| `create_database` | Inline or full-page database with schema |
-| `add_column` | Add a property column (all types) |
+| `create_database` | Inline or full-page database with schema — incl. **relation** (target db, single mode, reverse name), **formula** (`{"Prop Name"}` refs), **rollup** (by property name, optional aggregation) |
+| `add_column` | Add a property column (all types — same relation/formula/rollup specs) |
 | `create_media` | Attach image/file via URL or upload |
 | `create_embed` | Embed (20 providers) |
 | `create_table` | Simple table block |
@@ -335,6 +335,30 @@ Add `"NOTION_ALLOW_WRITE": "1"` to the `env` block in any of the configs above t
 | `import_csv` | CSV → inline database |
 
 Full args/types/examples: [`TOOLS.md`](packages/npy-mcp/skills/notion-mcp/TOOLS.md).
+
+#### Schema provisioning example
+
+Relation, formula, and rollup columns are fully supported (verified rendering
+in the Notion web UI):
+
+```json
+[
+  {"name": "Task", "type": "title"},
+  {"name": "Project", "type": "relation",
+   "target_database_id": "<db url or id>",
+   "limit": 1, "reverse_name": "Tasks"},
+  {"name": "Done", "type": "checkbox"},
+  {"name": "Status", "type": "formula",
+   "expression": "if({\"Done\"}, \"✅ done\", \"⬜ open\")"},
+  {"name": "Budget Rollup", "type": "rollup",
+   "relation_property": "Project", "target_property": "Budget",
+   "aggregation": "sum"}
+]
+```
+
+Date properties also accept ISO strings (`"2026-01-31"`,
+`"2026-01-31T14:30"`), and `files` properties accept local paths (uploaded
+automatically).
 
 ### Remote (HTTP) — for shared/team access
 
