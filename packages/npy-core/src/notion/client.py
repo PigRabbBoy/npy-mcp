@@ -28,6 +28,40 @@ from .user import User
 from .utils import extract_id, now
 
 
+def creval_get(crec):
+    """Unwrap a comment record from the store (handles both flat and
+    nested value.value shapes)."""
+    if not isinstance(crec, dict):
+        return None
+    if "text" in crec or "parent_table" in crec:
+        return crec  # already the flat comment value
+    v = crec.get("value")
+    if isinstance(v, dict) and "value" in v:
+        v = v.get("value")
+    return v if isinstance(v, dict) else None
+
+
+class _MissingPlaceholder:
+    pass
+
+
+Missing_placeholder = _MissingPlaceholder()
+
+
+def _discussion_context(client, dval, recordmap):
+    """Best-effort text snippet the discussion was started on."""
+    pid = dval.get("parent_id")
+    brec = (recordmap.get("block") or {}).get(pid) or {}
+    bval = ((brec.get("value") or {}).get("value")) or brec.get("value") or brec
+    props = bval.get("properties") or {} if isinstance(bval, dict) else {}
+    title = props.get("title") or []
+    parts = []
+    for seg in title:
+        if isinstance(seg, list) and seg:
+            parts.append(str(seg[0]))
+    return "".join(parts)
+
+
 def create_session(client_specified_retry=None):
     """
     retry on 502
@@ -171,6 +205,204 @@ class NotionClient(object):
     def get_top_level_pages(self):
         records = self._update_user_info()
         return [self.get_block(bid) for bid in records["block"].keys()]
+
+    def get_comments(self, block_id, include_resolved=True):
+        """Return all discussions + comments attached to a block (page).
+
+        Discussions live in the page's recordMap (loadPageChunk); each
+        discussion record has parent_id = the commented block, and its
+        `comments` list holds comment record ids resolved via
+        syncRecordValues.
+
+        Returns a list of dicts:
+            {"id": <discussion id>,
+             "context": <title-ish text the comment was started on>,
+             "resolved": bool,
+             "comments": [{"id", "author", "text", "created_time",
+                           "last_edited_time", "alive"}, ...]}
+        """
+        from datetime import datetime
+
+        block_id = extract_id(block_id)
+        data = self.get_record_data("block", block_id, force_refresh=True)
+        if not data:
+            return []
+        # Discussions ride along in the loadPageChunk recordmap of the block
+        # itself (page or any block inside a page — the chunk covers the
+        # enclosing page). No parent-walking needed.
+        page_id = block_id
+        try:
+            resp = self.post(
+                "loadPageChunk",
+                {
+                    "pageId": page_id,
+                    "limit": 100,
+                    "cursor": {"stack": []},
+                    "chunkNumber": 0,
+                    "verticalColumns": False,
+                },
+            ).json()
+        except Exception:
+            return []
+        recordmap = resp.get("recordMap", {})
+        discussions = []
+        for did, drec in (recordmap.get("discussion") or {}).items():
+            dval = ((drec or {}).get("value") or {}).get("value") or drec.get(
+                "value"
+            ) or {}
+            if not dval or dval.get("parent_id") != block_id:
+                continue
+            if dval.get("resolved") and not include_resolved:
+                continue
+            # the recordmap's comment list can be stale — always re-sync the
+            # discussion record itself for the authoritative comments list
+            fresh = self._store.get("discussion", did, force_refresh=True) or {}
+            if isinstance(fresh, dict):
+                fv = fresh.get("value")
+                if isinstance(fv, dict) and "value" in fv:
+                    fv = fv["value"]
+                if isinstance(fv, dict):
+                    dval = fv
+            comments = []
+            for cid in dval.get("comments") or []:
+                crec = self._store.get("comment", cid)
+                creval = creval_get(crec)
+                if not creval:
+                    continue
+                author = creval.get("created_by_id", "")
+                text_parts = []
+                for seg in creval.get("text") or []:
+                    if not isinstance(seg, list) or not seg:
+                        continue
+                    if seg[0] == "‣":
+                        # inline mention (user/page) — keep a readable token
+                        text_parts.append("@…")
+                    else:
+                        text_parts.append(str(seg[0]))
+                comments.append(
+                    {
+                        "id": cid,
+                        "author": author,
+                        "text": "".join(text_parts),
+                        "created_time": datetime.utcfromtimestamp(
+                            creval.get("created_time", 0) / 1000
+                        ).isoformat()
+                        if creval.get("created_time")
+                        else None,
+                        "last_edited_time": datetime.utcfromtimestamp(
+                            creval.get("last_edited_time", 0) / 1000
+                        ).isoformat()
+                        if creval.get("last_edited_time")
+                        else None,
+                        "alive": creval.get("alive", True),
+                    }
+                )
+            discussions.append(
+                {
+                    "id": dval.get("id", did),
+                    "context": _discussion_context(self, dval, recordmap),
+                    "resolved": dval.get("resolved", False),
+                    "comments": comments,
+                }
+            )
+        return discussions
+
+    def add_comment(self, block_id, text, discussion_id=None, resolve=False):
+        """Add a comment to a block (page).
+
+        With no discussion_id a new discussion (comment thread) is started
+        on the block (op shape = PageDiscussion.useSubmitNewDiscussion);
+        with a discussion_id this is a reply inside that thread.
+
+        Returns {"comment_id", "discussion_id"}.
+        """
+        import time as _time
+
+        from .operations import build_operation
+
+        block_id = extract_id(block_id)
+        now_ms = int(_time.time() * 1000)
+        comment_id = str(uuid.uuid4())
+        space_id = self.current_space.id if self.current_space else ""
+        user_id = self.current_user.id if self.current_user else ""
+        ops = []
+        if discussion_id is None:
+            discussion_id = str(uuid.uuid4())
+            # new thread: the web client *creates* the discussion with an
+            # "update" op (partial args — NOT a full "set"), then appends it
+            # to the block's discussions list
+            ops.append(
+                build_operation(
+                    discussion_id,
+                    [],
+                    {
+                        "type": "default",
+                        "parent_id": block_id,
+                        "parent_table": "block",
+                        "resolved": False,
+                        "space_id": space_id,
+                    },
+                    command="update",
+                    table="discussion",
+                )
+            )
+            ops.append(
+                build_operation(
+                    block_id,
+                    ["discussions"],
+                    {"id": discussion_id},
+                    command="listAfter",
+                    table="block",
+                )
+            )
+        else:
+            discussion_id = extract_id(discussion_id)
+        ops.append(
+            build_operation(
+                comment_id,
+                [],
+                {
+                    "id": comment_id,
+                    "parent_id": discussion_id,
+                    "parent_table": "discussion",
+                    "alive": True,
+                    "space_id": space_id,
+                    "created_time": now_ms,
+                    "last_edited_time": now_ms,
+                    "version": 1,
+                },
+                command="set",
+                table="comment",
+            )
+        )
+        ops.append(
+            build_operation(
+                discussion_id,
+                ["comments"],
+                {"id": comment_id},
+                command="listAfter",
+                table="discussion",
+            )
+        )
+        ops.append(
+            build_operation(
+                comment_id, ["text"], [[text]], command="set", table="comment"
+            )
+        )
+        ops.append(
+            build_operation(
+                comment_id,
+                [],
+                {
+                    "created_by_id": user_id,
+                    "created_by_table": "notion_user",
+                },
+                command="update",
+                table="comment",
+            )
+        )
+        self.submit_transaction(ops, update_last_edited=False)
+        return {"comment_id": comment_id, "discussion_id": discussion_id}
 
     def get_record_data(self, table, id, force_refresh=False, limit=100):
         return self._store.get(table, id, force_refresh=force_refresh, limit=limit)

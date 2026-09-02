@@ -331,3 +331,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Live-verified: full provisioning (2 DBs, relation+formula+rollup) +
   read-modify-write loop entirely through the CLI.
 - 117 tests (+4).
+
+## [0.10.0] - 2026-09-02
+
+### Added — Comments support (read + write)
+- **`get_comments(block_id)`** (npy-core) / **`get_comments`** MCP tool / **`notion get-comments`** CLI:
+  reads every comment thread on a page or block — discussion context, comment
+  text (user mentions as `@…`), author, created/edited timestamps, resolved
+  state. Discussions ride in the block's own loadPageChunk recordmap; the
+  authoritative comment list is re-synced per thread.
+- **`add_comment(block_id, text, discussion_id?)`** (npy-core) / **`add_comment`**
+  MCP tool (write-gated) / **`notion add-comment`** CLI: posts a comment as a
+  new thread or a reply. Op shapes captured from the web client:
+  new threads create the discussion via an *update* op + `block.discussions`
+  listAfter (PageDiscussion.useSubmitNewDiscussion); replies set the comment
+  record + `discussion.comments` listAfter. Live-verified both paths persist
+  and render in the Notion UI.
+- MCP surface: 27 tools (9 read / 18 write). CLI gains `get-comments` and
+  `add-comment`.
+
+### Notable
+- `get_comments` returns only `alive` comments in rendered output; resolved
+  threads can be filtered with `include_resolved=false` / `--open-only`.
+- 122 tests (+2).

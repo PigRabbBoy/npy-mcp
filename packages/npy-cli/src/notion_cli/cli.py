@@ -18,6 +18,9 @@ Commands:
   update-database-row Update a database row's properties (write)
   delete-database-row Delete a database row (write)
 
+  get-comments     Read comment threads on a page (read)
+  add-comment      Comment on a page — new thread or reply (write)
+
   get-image        Download an image/file block (read)
   create-database  Create a database with full schema — relation/formula/
                    rollup columns (write)
@@ -738,3 +741,50 @@ def import_csv(
         typer.echo(str(e), err=True)
         raise typer.Exit(1)
     typer.echo(f"Created database from CSV: {db_id}")
+
+
+@app.command(name="get-comments")
+def get_comments(
+    block_id: str = typer.Argument(..., help="Page/block URL or ID"),
+    include_resolved: bool = typer.Option(True, "--include-resolved/--open-only", help="Include resolved threads"),
+    token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
+) -> None:
+    """Read all comment threads on a page or block."""
+    client = get_client(token_arg=token)
+    try:
+        discussions = client.get_comments(block_id, include_resolved=include_resolved)
+    except Exception as exc:
+        typer.echo(f"Failed to read comments: {exc}", err=True)
+        raise typer.Exit(1)
+    if not discussions:
+        typer.echo("(no comments)")
+        return
+    for d in discussions:
+        status = " [resolved]" if d["resolved"] else ""
+        typer.echo(f"- thread {d['id']}{status} — on: {d['context'] or '(page)'}")
+        for c in d["comments"]:
+            if not c["alive"]:
+                continue
+            typer.echo(f"    - {c['text']}  ({c['created_time']}, by {c['author']})")
+
+
+@app.command(name="add-comment")
+def add_comment(
+    block_id: str = typer.Argument(..., help="Page/block URL or ID"),
+    text: str = typer.Option(..., "--text", help="Comment text"),
+    discussion_id: str = typer.Option("", "--thread", help="Existing discussion id to reply into (omit = new thread)"),
+    token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
+) -> None:
+    """Add a comment to a page (new thread, or reply with --thread)."""
+    _check_write_enabled()
+    client = get_client(token_arg=token)
+    try:
+        result = client.add_comment(
+            block_id, text, discussion_id=discussion_id or None
+        )
+    except Exception as exc:
+        typer.echo(f"Failed to add comment: {exc}", err=True)
+        raise typer.Exit(1)
+    typer.echo(
+        f"Comment added: {result['comment_id']} (discussion: {result['discussion_id']})"
+    )

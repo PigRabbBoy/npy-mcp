@@ -40,7 +40,7 @@ This is a monorepo with three packages:
 |---|---|---|
 | `npy-core` | Core library (NotionClient, Block, Collection, markdown) | `uv add npy-core` |
 | `npy-cli` | CLI tool with 23 commands (full MCP parity) | `uv add npy-cli` |
-| `npy-mcp` | MCP server (stdio + HTTP) with 23 tools | `uv add npy-mcp` |
+| `npy-mcp` | MCP server (stdio + HTTP) with 27 tools | `uv add npy-mcp` |
 
 ## CLI
 
@@ -302,13 +302,13 @@ env = { NOTION_TOKEN_V2 = "v03%3AeyJ..." }
 
 #### Enabling write tools (stdio)
 
-Add `"NOTION_ALLOW_WRITE": "1"` to the `env` block in any of the configs above to unlock 16 write tools (create, update, delete, move, etc.). Without it, only 7 read tools are available.
+Add `"NOTION_ALLOW_WRITE": "1"` to the `env` block in any of the configs above to unlock 18 write tools (create, update, delete, move, etc.). Without it, only 9 read tools are available.
 
-#### All 23 tools
+#### All 27 tools
 
 | Tool | What it does |
 |---|---|
-| **Read (7)** | |
+| **Read (9)** | |
 | `search` | Search pages/blocks across the workspace |
 | `get_page` | Page content as Markdown or JSON (depth control) |
 | `get_block` | Single block by URL/ID |
@@ -316,7 +316,9 @@ Add `"NOTION_ALLOW_WRITE": "1"` to the `env` block in any of the configs above t
 | `list_pages` | Recent pages (workspace or under a parent) |
 | `get_database` | Database schema + sample rows (`full_schema` dumps relation/rollup/formula definitions for provisioning) |
 | `query_database` | Filter/sort rows (full formula evaluation; `fetch_all` for every row) |
-| **Write (16)** — requires `NOTION_ALLOW_WRITE=1` | |
+| `get_comments` | Read comment threads on a page/block (author, text, timestamps) |
+| `add_comment` | Comment on a page — new thread or reply |
+| **Write (18)** — requires `NOTION_ALLOW_WRITE=1` | |
 | `create_page` | New page under a parent, with icon |
 | `append_blocks` | Add blocks (13 types) to a page |
 | `update_block` | Edit text / toggle checked |
@@ -421,9 +423,9 @@ Claude Desktop config for remote:
 
 ### Write gate
 
-By default, the MCP server exposes only **7 read tools**. Set
-`NOTION_ALLOW_WRITE=1` to unlock the **16 write tools** — see the
-["All 23 tools"](#all-23-tools) table above for the full list (search,
+By default, the MCP server exposes only **9 read tools**. Set
+`NOTION_ALLOW_WRITE=1` to unlock the **18 write tools** — see the
+["All 27 tools"](#all-27-tools) table above for the full list (search,
 get_page, get_block, get_image, list_pages, get_database, query_database —
 plus create/update/delete/move, database provisioning with
 relation/formula/rollup columns, media/embed/table/columns, CSV import).
@@ -446,7 +448,7 @@ cp -r packages/npy-mcp/skills/notion-mcp ~/.agents/skills/notion-mcp
 
 Contains:
 - `SKILL.md` — trigger description, tool selection guide, common workflows, write safety
-- `TOOLS.md` — full reference for all 23 tools (args, types, examples, error messages)
+- `TOOLS.md` — full reference for all 27 tools (args, types, examples, error messages)
 
 ### Release skill
 
@@ -572,7 +574,7 @@ notion-py/
 │   │   ├── render.py             ← Markdown/JSON formatters
 │   │   └── client_factory.py     ← Client builder from auth config
 │   └── npy-mcp/src/notion_mcp/   ← MCP server
-│       ├── server.py             ← MCPServer + 23 tools
+│       ├── server.py             ← MCPServer + 27 tools
 │       ├── transport_http.py     ← HTTP transport + Bearer auth
 │       └── __main__.py           ← Entry point (--transport stdio|http)
 ├── tests/                        ← 57 tests (unit + integration via vcr.py)

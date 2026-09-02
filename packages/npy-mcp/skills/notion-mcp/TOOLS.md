@@ -443,7 +443,7 @@ Import a CSV file as a new database.
 |---|---|
 | `NOTION_TOKEN_V2` | Notion session token. Required for all tools. |
 | `NOTION_SPACE_ID` | Bind to a specific space. Affects `search`, `list_pages`. |
-| `NOTION_ALLOW_WRITE` | Set to `1` to enable 16 write tools. Without it, only 7 read tools appear. |
+| `NOTION_ALLOW_WRITE` | Set to `1` to enable 17 write tools. Without it, only 8 read tools appear. |
 | `X-Notion-Token` header | Per-request Notion token (HTTP only). Overrides `NOTION_TOKEN_V2`. |
 | `NOTION_MCP_AUTH_TOKEN` | Bearer token for HTTP auth (not used in stdio). |
 

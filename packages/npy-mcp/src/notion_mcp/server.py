@@ -1637,6 +1637,41 @@ def _fetch_schema(client, col_id: str) -> dict:
         return {}
 
 
+@mcp.tool()
+def get_comments(
+    block_id: str,
+    include_resolved: bool = True,
+) -> str:
+    """Read all comment threads attached to a page or block.
+
+    Args:
+        block_id: Page/block URL or ID
+        include_resolved: If false, skip resolved (closed) threads
+
+    Returns:
+        Markdown list of discussions, each with its comments
+        (author, text, timestamps).
+    """
+    client = _get_client()
+    try:
+        discussions = client.get_comments(
+            block_id, include_resolved=include_resolved
+        )
+    except Exception as exc:
+        return f"Failed to read comments: {exc}"
+    if not discussions:
+        return "(no comments)"
+    lines = []
+    for d in discussions:
+        status = " [resolved]" if d["resolved"] else ""
+        lines.append(f"- thread {d['id']}{status} — on: {d['context'] or '(page)'}")
+        for c in d["comments"]:
+            if not c["alive"]:
+                continue
+            lines.append(f"    - {c['text']}  ({c['created_time']}, by {c['author']})")
+    return "\n".join(lines)
+
+
 if _WRITE_ENABLED:
     from notion.block import (
         PageBlock, TextBlock, TodoBlock, HeaderBlock, SubheaderBlock,
@@ -1650,6 +1685,34 @@ if _WRITE_ENABLED:
         DeepnoteBlock, SketchBlock, AbstractBlock, MixpanelBlock,
     )
     from notion.collection import Collection
+
+    @mcp.tool()
+    def add_comment(
+        block_id: str,
+        text: str,
+        discussion_id: str = "",
+    ) -> str:
+        """Add a comment to a page (new thread, or reply inside an existing one).
+
+        Args:
+            block_id: Page/block URL or ID
+            text: Comment text (plain text; user mentions render as "@…")
+            discussion_id: Optional existing thread id — omit to start a new thread
+
+        Returns:
+            Confirmation with comment and discussion ids.
+        """
+        client = _get_client()
+        try:
+            result = client.add_comment(
+                block_id, text, discussion_id=discussion_id or None
+            )
+        except Exception as exc:
+            return f"Failed to add comment: {exc}"
+        return (
+            f"Comment added: {result['comment_id']} "
+            f"(discussion: {result['discussion_id']})"
+        )
 
     @mcp.tool()
     def create_page(

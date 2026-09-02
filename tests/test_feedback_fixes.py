@@ -334,3 +334,67 @@ class TestInTransactionFetch:
 
         src = inspect.getsource(CollectionRowBlock._convert_python_to_notion)
         assert "Relation target not found" in src
+
+
+class TestComments:
+    """get_comments / add_comment (page comments feature)."""
+
+    def test_creval_get_flat_and_nested(self):
+        from notion.client import creval_get
+
+        flat = {"id": "c1", "text": [["hi"]], "parent_table": "discussion"}
+        assert creval_get(flat) is flat
+        nested = {"value": {"value": {"id": "c2", "text": []}}}
+        assert creval_get(nested)["id"] == "c2"
+        assert creval_get(None) is None
+        assert creval_get("junk") is None
+
+    def test_comment_text_rendering_skips_mentions(self):
+        # mention segments ('‣') render as @… tokens, literal text passes through
+        text = [["‣", [["u", "u1"]]], [" hello world"]]
+        parts = []
+        for seg in text:
+            if not isinstance(seg, list) or not seg:
+                continue
+            if seg[0] == "‣":
+                parts.append("@…")
+            else:
+                parts.append(str(seg[0]))
+        assert "".join(parts) == "@… hello world"
+
+    def test_add_comment_builds_discussion_ops(self):
+        # the op sequence for a NEW thread = set discussion + set comment +
+        # set comment.text (no listAfter); for a REPLY = set comment +
+        # listAfter + set text
+        import inspect
+
+        from notion.client import NotionClient
+
+        src = inspect.getsource(NotionClient.add_comment)
+        assert '"parent_table": "block"' in src  # new discussion
+        assert '"parent_table": "discussion"' in src  # comment record
+        assert '"listAfter"' in src  # reply append
+
+
+class TestAddComment:
+    """add_comment op shapes (captured from the web client)."""
+
+    def test_new_thread_uses_update_discussion_op(self):
+        import inspect
+
+        from notion.client import NotionClient
+
+        src = inspect.getsource(NotionClient.add_comment)
+        # new-thread creates the discussion with an *update* op (partial args)
+        assert 'command="update"' in src
+        assert '"parent_table": "block"' in src
+        # and appends it to the block's discussions list
+        assert '["discussions"]' in src
+
+    def test_reply_uses_list_after(self):
+        import inspect
+
+        from notion.client import NotionClient
+
+        src = inspect.getsource(NotionClient.add_comment)
+        assert '["comments"]' in src and '"listAfter"' in src
