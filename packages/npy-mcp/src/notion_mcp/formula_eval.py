@@ -1244,3 +1244,35 @@ def evaluate(prop_schema: dict, ctx):
     ast = parser.parse()
     interp = Interp(ctx)
     return interp.run(ast)
+
+
+def encode_expr(src: str, prop_meta: dict[str, dict] | None = None) -> list:
+    """Encode a formula source string into Notion formula2.code segments.
+
+    Inverse of build_expr: literals become single-element segments; property
+    references written as {"Prop Name"} become '‣' fpp segments.
+
+    prop_meta maps a display property name to {"property": <pid>,
+    "collection": {"id":..., "table":"collection", "spaceId":...}} — the same
+    shape the web client emits. Without a matching entry the fpp carries the
+    name only (the client-side evaluator resolves names, but the Notion UI
+    needs the id, so callers building schemas SHOULD provide meta).
+    """
+    prop_meta = prop_meta or {}
+    code: list = []
+    idx = 0
+    for m in re.finditer(r'\{"([^"]+)"\}', src):
+        literal = src[idx:m.start()]
+        if literal:
+            code.append([literal])
+        display = m.group(1)
+        meta = {"name": display, "verbose": False}
+        extra = prop_meta.get(display)
+        if extra:
+            meta.update(extra)
+        code.append(["‣", [["fpp", meta]]])
+        idx = m.end()
+    tail = src[idx:]
+    if tail:
+        code.append([tail])
+    return code

@@ -12,6 +12,7 @@ from .space import Space
 from .user import User
 from .markdown import notion_to_markdown, markdown_to_notion, notion_to_plaintext
 from .operations import build_operation
+from .render import render_property, render_properties
 from .utils import extract_id
 
 __all__ = [
@@ -30,5 +31,7 @@ __all__ = [
     "markdown_to_notion",
     "notion_to_plaintext",
     "build_operation",
+    "render_property",
+    "render_properties",
     "extract_id",
 ]

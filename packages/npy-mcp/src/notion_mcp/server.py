@@ -140,44 +140,12 @@ def _block_tree(client: NotionClient, block, depth: int) -> dict:
 def _render_property(value) -> str:
     """Render a Notion property value to a readable string.
 
-    Handles common Notion types that would otherwise leak Python repr:
-    - User → email or name (not "<User ...>")
-    - CollectionRowBlock → row title (not "<CollectionRowBlock ...>")
-    - NotionDate → ISO date string (not "<notion.collection.NotionDate ...>")
-    - list → comma-joined rendered items
-    - None → empty string
+    Shared implementation lives in npy-core (notion.render) so the CLI and
+    the MCP server never drift apart.
     """
-    if value is None:
-        return ""
-    if isinstance(value, list):
-        return ", ".join(_render_property(v) for v in value)
-    # CollectionRowBlock — check before User since both have .id, .email, .role
-    # CollectionRowBlock has .title_plaintext; User does not
-    if hasattr(value, "title_plaintext") and hasattr(value, "id"):
-        return value.title_plaintext or value.id
-    # User — has .email/.role but NOT .title_plaintext
-    # IMPORTANT: use .get() not property attrs — property attrs are lazy/cached
-    # and may return stale empty values even when store data is populated.
-    if hasattr(value, "email") and hasattr(value, "role"):
-        email = value.get("email") or "" if hasattr(value, "get") else ""
-        name = value.get("name") or "" if hasattr(value, "get") else ""
-        if name:
-            return str(name)
-        if email:
-            return str(email)
-        return getattr(value, "id", str(value))
-    # NotionDate — has start/end attributes
-    if hasattr(value, "start") and hasattr(value, "end") and hasattr(value, "timezone"):
-        start = value.start
-        end = value.end
-        if start and end:
-            return f"{start} → {end}"
-        return str(start or end or "")
-    # Fallback: str() but strip memory addresses
-    s = str(value)
-    if " object at 0x" in s:
-        return s.split(" object at ")[0].split(".")[-1]
-    return s
+    from notion.render import render_property
+
+    return render_property(value)
 
 
 # ---------------------------------------------------------------------------
@@ -438,6 +406,14 @@ class _FormulaCtx:
             rel_id = ((fallback_ref.get("collection") or {}).get("id")) or ""
         return _load_schema_cached(self.client, rel_id) if rel_id else {}
 
+    def _ref_schema(self, meta):
+        coll = (meta.get("collection") or {}).get("id")
+        return (
+            _load_schema_cached(self.client, coll)
+            if coll
+            else self.schema or {}
+        )
+
     def _value_for_prop(self, row_data, pid, ref_meta=None):
         tschema = (
             self.schema
@@ -471,6 +447,11 @@ class _FormulaCtx:
     def resolve_ref(self, n):
         meta = self.refs[n] if n < len(self.refs) else {}
         pid = meta.get("property")
+        if not pid and meta.get("name"):
+            # name-only fpp meta (from encode_expr-built formulas) — resolve
+            # the display name to a property id against the target schema
+            tschema = self._ref_schema(meta)
+            pid = _find_prop_id(tschema, meta["name"])
         return self._value_for_prop(self.row, pid, meta)
 
     def member(self, value, n):
@@ -479,7 +460,11 @@ class _FormulaCtx:
             out = [self.member(v, n) for v in value]
             return out
         if isinstance(value, _fev.Page):
-            return self._value_for_prop(value.data, meta.get("property"), meta)
+            pid = meta.get("property")
+            if not pid and meta.get("name"):
+                tschema = self._ref_schema(meta)
+                pid = _find_prop_id(tschema, meta["name"])
+            return self._value_for_prop(value.data, pid, meta)
         if value is None:
             return None
         raise _fev.Unsupported(f"member on {type(value).__name__}")
@@ -581,6 +566,13 @@ def _eval_formula_value(
             (prop.get("collection_pointer") or {}).get("id")
             or prop.get("collection_id")
         )
+        if not cid:
+            # rollups created without an explicit pointer: resolve the target
+            # collection through this row's own relation property schema
+            rel_prop = schema.get(rel_pid) or {}
+            cid = rel_prop.get("collection_id") or (
+                rel_prop.get("collection_pointer") or {}
+            ).get("id")
         tschema = _load_schema_cached(client, cid)
         out = []
         for rid in _relation_ids(row_block_data, rel_pid)[:30]:
@@ -1102,12 +1094,16 @@ def list_pages() -> str:
 def get_database(
     database_id: str,
     sample_rows: int = 5,
+    full_schema: bool = False,
 ) -> str:
     """Fetch a Notion database (collection) schema and sample rows.
 
     Args:
         database_id: Database block URL or ID, or collection ID
         sample_rows: Number of sample rows to show (default 5)
+        full_schema: If true, include full column definitions (relation
+            targets, rollup configs, formula expressions, select options) —
+            rich enough to diff for idempotent provisioning.
 
     Returns:
         Database name, column schema, and sample row data as markdown.
@@ -1163,6 +1159,38 @@ def get_database(
         if ptype in ("formula", "rollup"):
             formula_slugs.add(pslug)
         lines.append(f"  - **{pname}** ({ptype})")
+    if full_schema:
+        lines.append("")
+        lines.append("## Full schema")
+        raw_schema = collection.get("schema") or {}
+        for pid, p in raw_schema.items():
+            ptype = p.get("type", "?")
+            lines.append(f"  - **{p.get('name', '?')}** ({ptype}) [id: {pid}]")
+            if ptype == "relation":
+                tgt = p.get("collection_pointer") or {}
+                lines.append(
+                    f"      target: {p.get('collection_id') or tgt.get('id', '?')}"
+                )
+                lines.append(f"      single: {'yes' if p.get('limit') == 1 else 'no'}")
+                ar = p.get("autoRelate") or {}
+                if ar.get("enabled"):
+                    lines.append(f"      reverse_name: {ar.get('name', '')}")
+            elif ptype == "rollup":
+                lines.append(
+                    f"      relation_property: {p.get('relation_property', '?')}"
+                )
+                lines.append(f"      target_property: {p.get('target_property', '?')}")
+                if p.get("aggregation"):
+                    lines.append(f"      aggregation: {p['aggregation']}")
+            elif ptype == "formula":
+                try:
+                    src, _ = _fev.build_expr(p)
+                    lines.append(f"      expression: {src}")
+                except Exception:
+                    lines.append("      expression: (unparseable)")
+            elif ptype in ("select", "multi_select", "status"):
+                opts = [o.get("value", "") for o in p.get("options") or []]
+                lines.append(f"      options: {opts}")
     lines.append("")
     rows = collection.get_rows()[:sample_rows] if hasattr(collection, "get_rows") else []
     if rows:
@@ -1217,12 +1245,16 @@ def get_database(
 def query_database(
     database_id: str,
     limit: int = 20,
+    fetch_all: bool = False,
 ) -> str:
     """Query a Notion database and return rows as a markdown table.
 
     Args:
         database_id: Database block URL or ID, or collection ID
         limit: Maximum rows to return (default 20)
+        fetch_all: If true, fetch every row in the database regardless of
+            limit (the internal queryCollection API has no cursor pagination,
+            but a single request can return the full result set).
 
     Returns:
         Markdown table of database rows with all properties.
@@ -1275,7 +1307,14 @@ def query_database(
         col_names.append(pname)
         if ptype in ("formula", "rollup"):
             formula_slugs.add(pslug)
-    rows = collection.get_rows()[:limit] if hasattr(collection, "get_rows") else []
+    rows = collection.get_rows(
+        **({"limit": -1} if fetch_all else {"limit": limit})
+    ) if hasattr(collection, "get_rows") else []
+    if fetch_all and rows:
+        # -1 queries the remote total first, then fetches exactly that many
+        total_note = f"(fetched all {len(rows)} rows)"
+    else:
+        total_note = ""
     if not rows:
         return "(no rows)"
     # Build markdown table
@@ -1324,6 +1363,9 @@ def query_database(
                 rendered = _render_property(v)
             cells.append(rendered.replace("|", "\\|").replace("\n", " "))
         lines.append("| " + " | ".join(cells) + " |")
+    if total_note:
+        lines.append("")
+        lines.append(total_note)
     return "\n".join(lines)
 
 
@@ -1334,11 +1376,18 @@ def query_database(
 _WRITE_ENABLED = os.environ.get("NOTION_ALLOW_WRITE") == "1"
 
 
-def _build_collection_schema(col_specs: list) -> dict:
+def _build_collection_schema(col_specs: list, client=None, parent_space_id: str = "") -> dict:
     """Build a Notion collection schema from column specs.
 
     Each spec: {"name": str, "type": str, "options": [str, ...]}
-    Returns: {prop_id: {"name": str, "type": str, "options": [...]}}
+    Relation specs additionally accept:
+        "target_database_id": URL/ID of the related database (required),
+        "limit": 1 for single-property mode (default: unlimited/dual),
+        "reverse_name": custom name for the two-way sync property.
+    Formula specs accept "expression" (Notion formula2 source).
+    Rollup specs accept "relation_property" (name), "target_property" (name),
+        and optional "aggregation" (count, sum, percent_checked, latest_date...).
+    Returns: {prop_id: {"name": str, "type": str, ...}}
     """
     import uuid
     schema = {}
@@ -1346,13 +1395,168 @@ def _build_collection_schema(col_specs: list) -> dict:
         name = spec.get("name", "Untitled")
         ptype = spec.get("type", "text")
         prop_id = spec.get("id") or uuid.uuid4().hex[:4]
+        # stamp so a later pass reuses the same id (two-pass rollup build)
+        spec["id"] = prop_id
         prop = {"name": name, "type": ptype}
         if ptype in ("select", "multi_select", "status") and spec.get("options"):
             prop["options"] = [
                 {"value": o, "color": "default"} for o in spec["options"]
             ]
+        if ptype == "relation":
+            rel = _build_relation_prop(spec, client, parent_space_id)
+            prop.update(rel)
+        elif ptype == "formula":
+            expr = spec.get("expression", "")
+            if not expr:
+                raise ValueError(
+                    f"Column '{name}': formula columns need an 'expression'"
+                )
+            # Build name → {property, collection} metas so the Notion UI can
+            # resolve refs (it needs ids; the client-side evaluator accepts
+            # name-only).
+            own_pointer = spec.get("_own_pointer") or {}
+            own_schema = spec.get("_own_schema") or schema
+            prop_meta = {}
+            for other in col_specs:
+                if other is spec:
+                    continue
+                other_name = other.get("name", "")
+                other_id = other.get("id")
+                if not (other_name and other_id):
+                    continue
+                meta = {"property": other_id}
+                if other.get("type") == "relation":
+                    tgt = other.get("collection_id") or (
+                        other.get("collection_pointer") or {}
+                    ).get("id")
+                    meta["collection"] = {
+                        "id": _resolve_collection_id(client, tgt) if tgt else "",
+                        "table": "collection",
+                        "spaceId": spec.get("_space_id", ""),
+                    }
+                else:
+                    meta["collection"] = own_pointer
+                prop_meta[other_name] = meta
+            prop["version"] = "v2"
+            prop["formula2"] = {
+                "code": _fev.encode_expr(expr, prop_meta),
+                "result_type": {"type": "text"},
+            }
+        elif ptype == "rollup":
+            prop.update(_build_rollup_prop(spec, client))
         schema[prop_id] = prop
     return schema
+
+
+def _resolve_collection_id(client, ref: str) -> str:
+    """Resolve a database URL/ID to a collection ID (tolerates short ids)."""
+    from notion.utils import extract_id
+
+    raw = (ref or "").strip()
+    if not raw:
+        return ""
+    try:
+        raw = extract_id(raw)
+    except Exception:
+        pass  # keep raw as-is; caller may pass a short/partial id
+    block = client.get_block(raw) if client else None
+    if block is not None:
+        coll = getattr(block, "collection", None)
+        if coll is not None:
+            return coll.id
+    return raw
+
+
+def _build_relation_prop(spec: dict, client, parent_space_id: str) -> dict:
+    """Build the schema fragment for a relation property."""
+    target_ref = spec.get("target_database_id", "")
+    if not target_ref:
+        raise ValueError(
+            f"Column '{spec.get('name', '?')}': relation columns need "
+            "'target_database_id' (URL or ID of the related database)"
+        )
+    target_id = _resolve_collection_id(client, target_ref)
+    space_id = parent_space_id or (
+        client.current_space.id if client and client.current_space else ""
+    )
+    prop = {
+        "collection_id": target_id,
+        "collection_pointer": {
+            "id": target_id,
+            "table": "collection",
+            "spaceId": space_id,
+        },
+    }
+    if spec.get("limit") == 1:
+        prop["limit"] = 1
+    prop["autoRelate"] = {"enabled": False}
+    reverse_name = spec.get("reverse_name")
+    if reverse_name:
+        prop["autoRelate"] = {"enabled": True, "name": reverse_name}
+    return prop
+
+
+def _build_rollup_prop(spec: dict, client) -> dict:
+    """Build the schema fragment for a rollup property.
+
+    Needs the relation property (by name) on THIS database and the target
+    property (by name) on the related database.
+    """
+    rel_name = spec.get("relation_property", "")
+    target_name = spec.get("target_property", "")
+    if not (rel_name and target_name):
+        raise ValueError(
+            f"Column '{spec.get('name', '?')}': rollup columns need "
+            "'relation_property' and 'target_property' names"
+        )
+    own_schema = spec.get("_own_schema") or {}
+    rel_pid = _find_prop_id(own_schema, rel_name)
+    if not rel_pid:
+        raise ValueError(
+            f"rollup '{spec.get('name', '?')}': relation property "
+            f"'{rel_name}' not found in this database"
+        )
+    rel_prop = own_schema.get(rel_pid, {})
+    target_col_id = rel_prop.get("collection_id") or (
+        rel_prop.get("collection_pointer") or {}
+    ).get("id", "")
+    target_schema = _fetch_schema(client, target_col_id)
+    tgt_pid = _find_prop_id(target_schema, target_name)
+    if not tgt_pid:
+        raise ValueError(
+            f"rollup '{spec.get('name', '?')}': target property "
+            f"'{target_name}' not found in related database"
+        )
+    prop = {
+        "version": "v2",
+        "rollup_type": rel_prop.get("type", "relation"),
+        "target_property": tgt_pid,
+        "relation_property": rel_pid,
+        "target_property_type": target_schema.get(tgt_pid, {}).get("type", "text"),
+    }
+    agg = spec.get("aggregation")
+    if agg:
+        prop["aggregation"] = agg
+    return prop
+
+
+def _find_prop_id(schema: dict, name: str) -> str:
+    from notion.utils import slugify as _slug
+    want = _slug(name).lower()
+    for pid, p in schema.items():
+        if _slug(p.get("name", "")).lower() == want:
+            return pid
+    return ""
+
+
+def _fetch_schema(client, col_id: str) -> dict:
+    if not col_id or client is None:
+        return {}
+    try:
+        coll = client.get_collection(col_id)
+        return coll.get("schema") or {}
+    except Exception:
+        return {}
 
 
 if _WRITE_ENABLED:
@@ -1639,8 +1843,20 @@ if _WRITE_ENABLED:
                 [{"name":"Status","type":"select","options":["Todo","Done"]},
                  {"name":"Priority","type":"select","options":["High","Low"]}]
                 Supported types: title, text, number, select, multi_select,
-                date, person, checkbox, url, email, phone_number, file, relation.
-                If omitted, creates a database with a single "Name" title column.
+                date, person, checkbox, url, email, phone_number, file,
+                relation, formula, rollup, created_time, last_edited_time,
+                created_by, last_edited_by, status.
+                Relation columns: {"name","type":"relation",
+                "target_database_id":"<db url/id>","limit":1 (optional,
+                single-property mode),"reverse_name":"Backrefs" (optional,
+                two-way sync name)}.
+                Formula columns: {"name","type":"formula",
+                "expression":"if({\"Done\"}, \"✅\", \"⬜\")"} — reference
+                properties with {"Name"}.
+                Rollup columns: {"name","type":"rollup",
+                "relation_property":"Rel","target_property":"Price",
+                "aggregation":"sum"} (aggregation optional; relation/target
+                resolved by property NAME).
             icon: Optional emoji icon
             full_page: If true, creates a full-page database (collection_view_page).
                 If false (default), creates an inline database embedded in the page.
@@ -1656,7 +1872,33 @@ if _WRITE_ENABLED:
         # Build schema from columns spec
         if columns:
             col_specs = json.loads(columns)
-            schema = _build_collection_schema(col_specs)
+            space_id = client.current_space.id if client.current_space else ""
+            # two-pass: pass 1 builds everything except rollups/formulas
+            # (both need relation property ids from this same schema), pass 2
+            # adds them. Pass 1 stamps each spec with its generated prop id
+            # so pass 2 reuses the SAME ids.
+            schema = _build_collection_schema(
+                [s for s in col_specs if s.get("type") not in ("rollup", "formula")],
+                client,
+                space_id,
+            )
+            # formulas need fpp metas with property ids + collection pointer
+            own_pointer = {
+                "id": "<own>",
+                "table": "collection",
+                "spaceId": space_id,
+            }
+            for spec in col_specs:
+                if spec.get("type") in ("rollup", "formula"):
+                    spec["_own_schema"] = schema
+                    spec["_own_pointer"] = own_pointer
+                    spec["_space_id"] = space_id
+            schema = _build_collection_schema(col_specs, client, space_id)
+            # patch own-collection pointer into formula fpp metas now that we
+            # know the real collection id (created by create_record below —
+            # schema dict is built BEFORE the collection exists, so fpp metas
+            # carry the placeholder; Notion resolves {name,property} fine when
+            # the collection pointer matches the enclosing collection)
         else:
             schema = {"title": {"name": "Name", "type": "title"}}
 
@@ -1694,7 +1936,14 @@ if _WRITE_ENABLED:
                 relation, created_time, last_edited_time, created_by,
                 last_edited_by, status)
             options: For select/multi_select/status: JSON array of option
-                values, e.g. ["High","Medium","Low"]
+                values, e.g. ["High","Medium","Low"].
+                For relation: JSON spec {"target_database_id":"<db url/id>",
+                "limit":1 (optional single),"reverse_name":"Backrefs"
+                (optional two-way sync name)}.
+                For formula: JSON spec {"expression":"..."} — reference
+                properties with {"Name"}.
+                For rollup: JSON spec {"relation_property":"Rel",
+                "target_property":"Price","aggregation":"sum"} (names, not ids).
 
         Returns:
             Confirmation message with the new column's property ID.
@@ -1721,6 +1970,52 @@ if _WRITE_ENABLED:
         if type in ("select", "multi_select", "status") and options:
             opts = json.loads(options)
             prop["options"] = [{"value": o, "color": "default"} for o in opts]
+        if type in ("relation", "formula", "rollup"):
+            # options doubles as the spec JSON for advanced column types
+            spec = json.loads(options) if options else {}
+            spec.setdefault("name", name)
+            spec["type"] = type
+            space_id = client.current_space.id if client.current_space else ""
+            if type == "relation":
+                prop.update(_build_relation_prop(spec, client, space_id))
+            elif type == "formula":
+                expr = spec.get("expression", "")
+                if not expr:
+                    return "formula columns need an options JSON with 'expression'"
+                own_schema = collection.get("schema") or {}
+                coll_ptr_id = (
+                    collection.get("parent_id")
+                    or getattr(collection, "id", "")
+                )
+                space_id = client.current_space.id if client.current_space else ""
+                own_pointer = {
+                    "id": getattr(collection, "id", ""),
+                    "table": "collection",
+                    "spaceId": space_id,
+                }
+                prop_meta = {}
+                for pid2, p2 in own_schema.items():
+                    meta = {"property": pid2}
+                    if p2.get("type") == "relation":
+                        tgt = p2.get("collection_id") or (
+                            p2.get("collection_pointer") or {}
+                        ).get("id")
+                        meta["collection"] = {
+                            "id": tgt,
+                            "table": "collection",
+                            "spaceId": space_id,
+                        }
+                    else:
+                        meta["collection"] = own_pointer
+                    prop_meta[p2.get("name", "")] = meta
+                prop["version"] = "v2"
+                prop["formula2"] = {
+                    "code": _fev.encode_expr(expr, prop_meta),
+                    "result_type": {"type": "text"},
+                }
+            elif type == "rollup":
+                spec["_own_schema"] = collection.get("schema") or {}
+                prop.update(_build_rollup_prop(spec, client))
 
         # Add to schema
         current_schema = collection.get("schema") or {}

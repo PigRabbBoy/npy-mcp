@@ -244,3 +244,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Smoke test flakiness: Notion's search index is eventually consistent and can lag well past a minute, so the space-wide search retry window was raised from ~60s (20×3s) to up to ~300s (60×5s), and now checks before sleeping so fast-indexed runs return instantly.
+
+## [0.8.0] - 2026-08-24
+
+### Fixed
+- **Date write corruption** (highest value): writing a plain string to a date
+  property silently stored an empty value (`isinstance` check never matched
+  strings). Strings are now coerced via `NotionDate.from_isoformat()` —
+  `"2026-01-31"` and `"2026-01-31T14:30"` work; invalid strings raise.
+- Relation columns render as `Title (URL)` instead of bare titles or reprs.
+- CLI no longer leaks raw Python reprs (`<CollectionRowBlock ...>`,
+  `<NotionDate ...>`) in markdown or `--format json` — CLI and MCP now share
+  one renderer (`notion.render`, npy-core).
+
+### Added
+- **Relation column creation**: `target_database_id` + optional `limit: 1`
+  (single-property mode) + optional `reverse_name` (two-way sync).
+- **Formula column creation**: `expression` with `{"Prop Name"}` refs; fpp
+  metas carry property ids + collection pointers (verified rendering in the
+  Notion web UI), `result_type` in the shape the UI requires.
+- **Rollup column creation**: relation/target resolved by property NAME,
+  `aggregation` optional; evaluation path now resolves target collection via
+  the row's relation schema when the rollup has no pointer.
+- **get_database `full_schema`**: relation targets, rollup configs, formula
+  expressions, select options — rich enough for idempotent provisioning.
+- **query_database `fetch_all`**: internal queryCollection has NO cursor
+  pagination (probed: startCursor/after/searchAfter all ignored) but one
+  request can return the full set — fetch_all uses CollectionQuery's
+  limit=-1 remote-total path and reports the row count.
+- **Local file upload for `files` properties**: pass a filesystem path to a
+  files-type row property → uploads via getUploadSpaceFileUrl + S3 PUT and
+  attaches (URL-only before).
+- `NotionDate.__str__/__repr__`; `render_property`/`render_properties`
+  exported from npy-core.
+
+### Verified live
+- Full provisioning round-trip (Projects DB + Tasks DB with relation, formula
+  `if({"Done"},...)`, rollup sum) rendered correctly in the Notion web UI —
+  schema shape matched against UI-created databases (fpp `property` +
+  `collection` metas, `result_type` snake_case, rollup `version: v2`).
+- 112 tests (+27).

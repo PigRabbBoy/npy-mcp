@@ -4,6 +4,11 @@ from datetime import datetime, date
 from tzlocal import get_localzone
 from uuid import uuid1
 
+import mimetypes
+import os
+
+import requests
+
 from .block import Block, PageBlock, Children, CollectionViewBlock
 from .logger import logger
 from .maps import property_map, field_map
@@ -31,6 +36,16 @@ class NotionDate(object):
         self.timezone = timezone
         self.reminder = reminder
 
+    def __repr__(self):
+        if self.start and self.end:
+            return f"NotionDate({self.start} → {self.end})"
+        return f"NotionDate({self.start})"
+
+    def __str__(self):
+        if self.start and self.end:
+            return f"{self.start} → {self.end}"
+        return str(self.start or "")
+
     @classmethod
     def from_notion(cls, obj):
         if isinstance(obj, dict):
@@ -53,6 +68,23 @@ class NotionDate(object):
             return datetime.strptime(date_str + " " + time_str, "%Y-%m-%d %H:%M")
         else:
             return datetime.strptime(date_str, "%Y-%m-%d").date()
+
+    @classmethod
+    def from_isoformat(cls, s):
+        """Parse an ISO 8601 date or datetime string into a NotionDate."""
+        if not isinstance(s, str) or not s.strip():
+            raise ValueError("empty date string")
+        s = s.strip()
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        # date-only strings stay dates (datetime.fromisoformat would coerce
+        # them to midnight datetimes, changing the stored type)
+        if "T" not in s and " " not in s:
+            return cls(date.fromisoformat(s))
+        try:
+            return cls(datetime.fromisoformat(s))
+        except ValueError:
+            return cls(date.fromisoformat(s))
 
     def _format_datetime(self, date_or_datetime):
         if not date_or_datetime:
@@ -648,6 +680,16 @@ class CollectionRowBlock(PageBlock):
         if prop["type"] in ["email", "phone_number", "url"]:
             val = [[val, [["a", val]]]]
         if prop["type"] in ["date"]:
+            if isinstance(val, str):
+                # Accept ISO strings ("2026-01-31" or "2026-01-31T14:00:00")
+                # instead of silently writing an empty date.
+                try:
+                    val = NotionDate.from_isoformat(val)
+                except (ValueError, AttributeError):
+                    raise ValueError(
+                        "Value passed to property '{}' is not a valid ISO 8601 "
+                        "date/datetime string: {!r}".format(identifier, val)
+                    )
             if isinstance(val, date) or isinstance(val, datetime):
                 val = NotionDate(val)
             if isinstance(val, NotionDate):
@@ -658,9 +700,51 @@ class CollectionRowBlock(PageBlock):
             filelist = []
             if not isinstance(val, list):
                 val = [val]
-            for url in val:
-                url = remove_signed_prefix_as_needed(url)
-                filename = url.split("/")[-1]
+            for item in val:
+                if (
+                    isinstance(item, str)
+                    and not item.lower().startswith(("http://", "https://"))
+                    and os.path.exists(item)
+                ):
+                    # local path → upload to Notion's S3, then attach
+                    upload = self._client.post(
+                        "getUploadSpaceFileUrl",
+                        {
+                            "bucket": "secure",
+                            "name": os.path.split(item)[-1],
+                            "contentType": mimetypes.guess_type(item)[0]
+                            or "application/octet-stream",
+                            "record": {
+                                "table": "block",
+                                "id": self.id,
+                                "spaceId": (
+                                    self._client.current_space.id
+                                    if self._client.current_space
+                                    else ""
+                                ),
+                            },
+                            "supportExtraHeaders": True,
+                            "contentLength": os.path.getsize(item),
+                            "spaceId": (
+                                self._client.current_space.id
+                                if self._client.current_space
+                                else ""
+                            ),
+                        },
+                    ).json()
+                    with open(item, "rb") as f:
+                        put_headers = {"Content-type": mimetype}
+                        for h in upload.get("putHeaders", []):
+                            put_headers[h["name"]] = h["value"]
+                        resp = requests.put(
+                            upload["signedPutUrl"], data=f, headers=put_headers
+                        )
+                        resp.raise_for_status()
+                    url = upload["url"]
+                    filename = os.path.split(item)[-1]
+                else:
+                    url = remove_signed_prefix_as_needed(str(item))
+                    filename = url.split("/")[-1]
                 filelist += [[filename, [["a", url]]], [","]]
             val = filelist[:-1]
         if prop["type"] in ["checkbox"]:

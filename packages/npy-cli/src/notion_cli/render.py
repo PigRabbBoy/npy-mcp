@@ -6,6 +6,16 @@ import json
 from typing import Any
 
 from notion import Block, CollectionRowBlock, NotionClient, notion_to_markdown
+from notion.render import render_property
+
+
+def _safe_props(row) -> dict:
+    """Row properties with all values rendered to strings (never raw reprs)."""
+    try:
+        raw = row.get_all_properties()
+    except Exception:
+        return {}
+    return {k: render_property(v) for k, v in raw.items()}
 
 
 def render_block(block: Block, format: str = "markdown") -> str:
@@ -47,13 +57,13 @@ def render_search_results(results: list[Block], format: str = "markdown") -> str
 def render_rows(rows: list[CollectionRowBlock], format: str = "markdown") -> str:
     """Render database rows (used by query_database / get_database)."""
     if format == "json":
-        items = [r.get_all_properties() for r in rows]
-        return json.dumps(items, indent=2, ensure_ascii=False, default=str)
+        items = [_safe_props(r) for r in rows]
+        return json.dumps(items, indent=2, ensure_ascii=False)
     if not rows:
         return "(no rows)"
     lines = []
     for row in rows:
-        props = row.get_all_properties()
+        props = _safe_props(row)
         parts = []
         for k, v in props.items():
             parts.append(f"  {k}: {v}")
@@ -69,7 +79,7 @@ def render_database(collection, sample_rows: int = 5, format: str = "markdown") 
         data = {
             "name": collection.name if hasattr(collection, "name") else "",
             "schema": [{"name": p.get("name","?"), "type": p.get("type","?")} for p in schema],
-            "sample_rows": [r.get_all_properties() for r in rows],
+            "sample_rows": [_safe_props(r) for r in rows],
         }
         return json.dumps(data, indent=2, ensure_ascii=False, default=str)
     name = collection.name if hasattr(collection, "name") else "(unnamed)"
@@ -85,10 +95,7 @@ def render_database(collection, sample_rows: int = 5, format: str = "markdown") 
     if rows:
         lines.append(f"## Sample rows ({len(rows)})")
         for row in rows:
-            try:
-                props = row.get_all_properties()
-            except Exception:
-                props = {}
+            props = _safe_props(row)
             parts = []
             for k, v in props.items():
                 parts.append(f"  {k}: {v}")
