@@ -194,6 +194,15 @@ class RecordStore(object):
                     except Exception:
                         self.call_get_record_values(block=id)
                     result = self._get(table, id)
+                    if result is Missing and self._client.in_transaction():
+                        # In-transaction queueing in call_load_page_chunk
+                        # deferred the fetch — but this record already exists
+                        # on the server (it's not produced by this txn), so
+                        # fetch it NOW or reads inside the txn see None.
+                        self.call_get_record_values(
+                            block=id, _force_real_request=True
+                        )
+                        result = self._get(table, id)
                 else:
                     self.call_load_page_chunk(id, limit=limit)
             else:
@@ -233,7 +242,7 @@ class RecordStore(object):
         for cb in callback_queue:
             self._trigger_callbacks(*cb)
 
-    def call_get_record_values(self, **kwargs):
+    def call_get_record_values(self, _force_real_request=False, **kwargs):
         """
         Call the server's syncRecordValues endpoint to update the local record store. The keyword arguments map
         table names into lists of (or singular) record IDs to load for that table. Use True to refresh all known
@@ -251,7 +260,9 @@ class RecordStore(object):
                 ids = [ids]
 
             # if we're in a transaction, add the requested IDs to a queue to refresh when the transaction completes
-            if self._client.in_transaction():
+            # (unless forced — a forced request means the caller needs the
+            # data NOW, e.g. resolving a pre-existing record mid-transaction)
+            if self._client.in_transaction() and not _force_real_request:
                 self._records_to_refresh[table] = list(
                     set(self._records_to_refresh.get(table, []) + ids)
                 )

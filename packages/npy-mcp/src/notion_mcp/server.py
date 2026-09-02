@@ -1206,7 +1206,7 @@ def get_database(
                 row_data = client._store._get("block", row.id) or {}
             except Exception:
                 row_data = {}
-            parts = []
+            parts = [f"  id: {row.id}"]
             for prop in schema:
                 pname = prop.get("name", "?")
                 pslug = prop.get("slug", pname)
@@ -1297,7 +1297,7 @@ def query_database(
     except Exception as exc:
         return f"Failed to read database schema: {exc}"
     slug_to_name: dict[str, str] = {}
-    col_names: list[str] = []
+    col_names: list[str] = ["id"]
     formula_slugs: set[str] = set()
     for prop in schema:
         pname = prop.get("name", "?")
@@ -1333,7 +1333,7 @@ def query_database(
             row_data = client._store._get("block", row.id) or {}
         except Exception:
             row_data = {}
-        cells = []
+        cells = [row.id]
         for prop in schema:
             pslug = prop.get("slug", prop.get("name", "?"))
             ptype = prop.get("type", "?")
@@ -1374,6 +1374,84 @@ def query_database(
 # ---------------------------------------------------------------------------
 
 _WRITE_ENABLED = os.environ.get("NOTION_ALLOW_WRITE") == "1"
+
+def _embed_type_map() -> dict:
+    """Embed-type → block-class map (lazy — needs the write-enabled imports)."""
+    return {
+        "embed": EmbedBlock,
+        "bookmark": BookmarkBlock,
+        "tweet": TweetBlock,
+        "gist": GistBlock,
+        "figma": FigmaBlock,
+        "loom": LoomBlock,
+        "typeform": TypeformBlock,
+        "codepen": CodepenBlock,
+        "maps": MapsBlock,
+        "invision": InvisionBlock,
+        "framer": FramerBlock,
+        "drive": DriveBlock,
+        "html": HtmlBlock,
+        "miro": MiroBlock,
+        "excalidraw": ExcalidrawBlock,
+        "replit": ReplitBlock,
+        "deepnote": DeepnoteBlock,
+        "sketch": SketchBlock,
+        "abstract": AbstractBlock,
+        "mixpanel": MixpanelBlock,
+    }
+
+
+def _import_csv_impl(client, parent, file_path: str, title: str = "") -> str:
+    """Shared CSV→inline-database import (used by MCP tool and CLI)."""
+    import csv as csv_mod
+    import os
+
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"File not found: {file_path}")
+    with open(file_path, newline="", encoding="utf-8") as f:
+        reader = csv_mod.reader(f)
+        headers = next(reader)
+        rows_data = list(reader)
+    if not headers:
+        raise ValueError("CSV file has no headers")
+    if not title:
+        title = os.path.basename(file_path).rsplit(".", 1)[0]
+
+    schema = {}
+    title_prop_id = None
+    for i, h in enumerate(headers):
+        prop_id = f"col{i:04x}"
+        if title_prop_id is None:
+            schema[prop_id] = {"name": h, "type": "title"}
+            title_prop_id = prop_id
+        else:
+            schema[prop_id] = {"name": h, "type": "text"}
+    if title_prop_id is None:
+        schema["title"] = {"name": "Name", "type": "title"}
+        title_prop_id = "title"
+
+    cvb = parent.children.add_new(CollectionViewBlock)
+    collection_id = client.create_record("collection", parent=cvb, schema=schema)
+    cvb.collection = client.get_collection(collection_id)
+    cvb.title = title
+    cvb.views.add_new(view_type="table")
+
+    from notion.utils import slugify
+
+    title_slug = slugify(schema[title_prop_id]["name"])
+    for row in rows_data:
+        props = {}
+        for i, val in enumerate(row):
+            if i < len(headers):
+                if i == 0:
+                    props[title_slug] = val
+                else:
+                    props[slugify(headers[i])] = val
+        try:
+            cvb.collection.add_row(**props)
+        except Exception:
+            pass  # Skip rows that fail
+    return cvb.id
 
 
 def _build_collection_schema(col_specs: list, client=None, parent_space_id: str = "") -> dict:
@@ -2096,28 +2174,7 @@ if _WRITE_ENABLED:
         if parent is None:
             return f"Parent not found: {parent_id}"
 
-        TYPE_MAP = {
-            "embed": EmbedBlock,
-            "bookmark": BookmarkBlock,
-            "tweet": TweetBlock,
-            "gist": GistBlock,
-            "figma": FigmaBlock,
-            "loom": LoomBlock,
-            "typeform": TypeformBlock,
-            "codepen": CodepenBlock,
-            "maps": MapsBlock,
-            "invision": InvisionBlock,
-            "framer": FramerBlock,
-            "drive": DriveBlock,
-            "html": HtmlBlock,
-            "miro": MiroBlock,
-            "excalidraw": ExcalidrawBlock,
-            "replit": ReplitBlock,
-            "deepnote": DeepnoteBlock,
-            "sketch": SketchBlock,
-            "abstract": AbstractBlock,
-            "mixpanel": MixpanelBlock,
-        }
+        TYPE_MAP = _embed_type_map()
         cls = TYPE_MAP.get(type)
         if cls is None:
             supported = ", ".join(sorted(TYPE_MAP.keys()))
@@ -2224,60 +2281,10 @@ if _WRITE_ENABLED:
         parent = client.get_block(parent_id)
         if parent is None:
             return f"Parent not found: {parent_id}"
-        if not os.path.exists(file_path):
-            return f"File not found: {file_path}"
-
-        # Parse CSV
-        with open(file_path, newline="", encoding="utf-8") as f:
-            reader = csv_mod.reader(f)
-            headers = next(reader)
-            rows_data = list(reader)
-
-        if not headers:
-            return "CSV file has no headers"
-        if not title:
-            title = os.path.basename(file_path).rsplit(".", 1)[0]
-
-        # Build schema: first text column as title, rest as text
-        schema = {}
-        title_prop_id = None
-        for i, h in enumerate(headers):
-            prop_id = f"col{i:04x}"
-            if title_prop_id is None:
-                schema[prop_id] = {"name": h, "type": "title"}
-                title_prop_id = prop_id
-            else:
-                schema[prop_id] = {"name": h, "type": "text"}
-
-        if title_prop_id is None:
-            schema["title"] = {"name": "Name", "type": "title"}
-            title_prop_id = "title"
-
-        # Create inline database
-        cvb = parent.children.add_new(CollectionViewBlock)
-        collection_id = client.create_record(
-            "collection", parent=cvb, schema=schema
-        )
-        cvb.collection = client.get_collection(collection_id)
-        cvb.title = title
-        cvb.views.add_new(view_type="table")
-
-        # Add rows — use slugified column names as keys (matching schema)
-        from notion.utils import slugify
-        title_slug = slugify(schema[title_prop_id]["name"])
-        for row in rows_data:
-            props = {}
-            for i, val in enumerate(row):
-                if i < len(headers):
-                    if i == 0:
-                        # First column is title
-                        props[title_slug] = val
-                    else:
-                        # Other columns use slugified header name
-                        props[slugify(headers[i])] = val
-            try:
-                cvb.collection.add_row(**props)
-            except Exception:
-                pass  # Skip rows that fail
-
-        return f"Imported {len(rows_data)} rows from CSV as database: {cvb.id}"
+        try:
+            db_id = _import_csv_impl(client, parent, file_path, title)
+        except FileNotFoundError as e:
+            return str(e)
+        except ValueError as e:
+            return str(e)
+        return f"Imported CSV as database: {db_id}"

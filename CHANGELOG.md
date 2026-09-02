@@ -301,3 +301,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   write-tools heading corrected 9 → 16; `full_schema`/`fetch_all` documented.
 - README: Write gate section now points at the "All 23 tools" table instead
   of maintaining a second, stale enumeration (7 read / 16 write).
+
+## [0.9.0] - 2026-09-02
+
+### Added
+- **Issue #3 — row identity in reads**: `query_database` (MCP) prepends an
+  `id` column to its table; `get_database` sample rows start with
+  `id: …` lines; the CLI's `query-database`/`get-database` return
+  `{"id", "url", "properties": {…}}` per row (nested so a user column named
+  "id" can't shadow identity). Read-then-write loops now work end-to-end
+  with no extra search round-trip.
+- **Issue #4 — full CLI/MCP parity (15 → 23 commands)**: new
+  `get-image`, `create-database`, `add-column`, `create-media`,
+  `create-embed`, `create-table`, `create-columns`, `import-csv`.
+  Schema provisioning (relation/formula/rollup) is now scriptable —
+  `notion create-database --columns '<json>'`,
+  `notion add-column --options '<json>'`, plus
+  `get-database --full-schema` and `query-database --fetch-all` flags.
+  Shared implementations live in npy-mcp (`_import_csv_impl`,
+  `_embed_type_map`) so CLI and MCP never drift.
+
+### Fixed
+- **Core**: resolving a pre-existing block mid-transaction returned None
+  (in-transaction fetches were deferred to post-commit), which made
+  `add_row(Project=["<id>"])` fail on fresh clients when the target wasn't
+  in the local store. The store now performs a real syncRecordValues
+  round-trip when a mid-transaction read misses. Relation writes raise a
+  clear `Relation target not found` instead of a bare AttributeError.
+- Live-verified: full provisioning (2 DBs, relation+formula+rollup) +
+  read-modify-write loop entirely through the CLI.
+- 117 tests (+4).

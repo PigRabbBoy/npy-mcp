@@ -760,8 +760,17 @@ class CollectionRowBlock(PageBlock):
             if not isinstance(val, list):
                 val = [val]
             for page in val:
+                page_ref = page
                 if isinstance(page, str):
                     page = self._client.get_block(page)
+                    if page is None:
+                        # freshly created relation target not in the local
+                        # store yet — force a server round-trip
+                        page = self._client.get_block(page_ref, force_refresh=True)
+                    if page is None:
+                        raise ValueError(
+                            "Relation target not found: {!r}".format(page_ref)
+                        )
                 pagelist += [["‣", [["p", page.id]]], [","]]
             val = pagelist[:-1]
         if prop["type"] in ["created_time", "last_edited_time"]:

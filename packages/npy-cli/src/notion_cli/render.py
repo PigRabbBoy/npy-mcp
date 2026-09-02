@@ -10,12 +10,23 @@ from notion.render import render_property
 
 
 def _safe_props(row) -> dict:
-    """Row properties with all values rendered to strings (never raw reprs)."""
+    """Row identity + rendered properties (never raw reprs).
+
+    Shape: {"id": ..., "url": ..., "properties": {slug: rendered}}. The
+    properties live nested so a user column literally named "id" can't
+    shadow the row's identity (issue #3 — read-then-write loops need the id).
+    """
     try:
         raw = row.get_all_properties()
     except Exception:
-        return {}
-    return {k: render_property(v) for k, v in raw.items()}
+        raw = {}
+    return {
+        "id": row.id,
+        "url": row.get_browseable_url()
+        if hasattr(row, "get_browseable_url")
+        else "",
+        "properties": {k: render_property(v) for k, v in raw.items()},
+    }
 
 
 def render_block(block: Block, format: str = "markdown") -> str:
@@ -64,8 +75,10 @@ def render_rows(rows: list[CollectionRowBlock], format: str = "markdown") -> str
     lines = []
     for row in rows:
         props = _safe_props(row)
-        parts = []
-        for k, v in props.items():
+        parts = [f"id: {props['id']}"]
+        if props["url"]:
+            parts.append(f"url: {props['url']}")
+        for k, v in props["properties"].items():
             parts.append(f"  {k}: {v}")
         lines.append("\n".join(parts))
     return "\n---\n".join(lines)
@@ -96,8 +109,10 @@ def render_database(collection, sample_rows: int = 5, format: str = "markdown") 
         lines.append(f"## Sample rows ({len(rows)})")
         for row in rows:
             props = _safe_props(row)
-            parts = []
-            for k, v in props.items():
+            parts = [f"id: {props['id']}"]
+            if props["url"]:
+                parts.append(f"url: {props['url']}")
+            for k, v in props["properties"].items():
                 parts.append(f"  {k}: {v}")
             lines.append("\n".join(parts))
             lines.append("---")

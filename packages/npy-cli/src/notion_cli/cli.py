@@ -18,6 +18,16 @@ Commands:
   update-database-row Update a database row's properties (write)
   delete-database-row Delete a database row (write)
 
+  get-image        Download an image/file block (read)
+  create-database  Create a database with full schema — relation/formula/
+                   rollup columns (write)
+  add-column       Add a column (all types incl. relation/formula/rollup) (write)
+  create-media     Image/video/audio/file/pdf from URL or upload (write)
+  create-embed     Embed blocks (20 providers) (write)
+  create-table     Simple table block (write)
+  create-columns   Column layout (write)
+  import-csv       CSV → inline database (write)
+
   auth whoami      Show current token + space
   auth use-space   Set the current space (persisted)
   auth spaces     List all spaces the token has access to
@@ -438,3 +448,293 @@ def spaces(
 
 if __name__ == "__main__":
     app()
+
+# ---------------------------------------------------------------------------
+# Schema provisioning + content commands (write; get_image is read)
+# ---------------------------------------------------------------------------
+
+@app.command(name="get-image")
+def get_image(
+    block_id: str = typer.Argument(..., help="Image/file block URL or ID"),
+    token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
+) -> None:
+    """Download an image/file block's source and save it locally."""
+    client = get_client(token_arg=token)
+    block = client.get_block(block_id)
+    if block is None:
+        typer.echo(f"Block not found: {block_id}", err=True)
+        raise typer.Exit(1)
+    from notion.block import ImageBlock, FileBlock, PDFBlock, VideoBlock, AudioBlock
+
+    if not isinstance(block, (ImageBlock, FileBlock, PDFBlock, VideoBlock, AudioBlock)):
+        typer.echo(f"Block is not a media block: {type(block).__name__}", err=True)
+        raise typer.Exit(1)
+    url = block.get("source") or ""
+    if not url:
+        typer.echo("Block has no source URL", err=True)
+        raise typer.Exit(1)
+    import requests as _rq
+
+    resp = _rq.get(url, timeout=60)
+    resp.raise_for_status()
+    from pathlib import Path
+
+    filename = url.split("?")[0].split("/")[-1] or "download.bin"
+    out = Path(filename)
+    out.write_bytes(resp.content)
+    typer.echo(f"Saved {len(resp.content)} bytes to {out}")
+
+
+@app.command(name="create-database")
+def create_database(
+    parent_id: str = typer.Argument(..., help="Parent page URL or ID"),
+    title: str = typer.Option(..., "--title", help="Database title"),
+    columns: str = typer.Option("", "--columns", "-c", help='JSON array of column specs, e.g. \'[{"name":"Status","type":"select","options":["Todo","Done"]}]\' — supports relation ({"target_database_id","limit":1?,"reverse_name"?}), formula ({"expression"}), rollup ({"relation_property","target_property","aggregation"?})'),
+    icon: str = typer.Option("", "--icon", help="Emoji icon"),
+    full_page: bool = typer.Option(False, "--full-page", help="Create a full-page database instead of inline"),
+    token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
+) -> None:
+    """Create a new database (collection) under a parent page."""
+    _check_write_enabled()
+    client = get_client(token_arg=token)
+    parent = client.get_block(parent_id)
+    if parent is None:
+        typer.echo(f"Parent not found: {parent_id}", err=True)
+        raise typer.Exit(1)
+    from notion.block import CollectionViewBlock, CollectionViewPageBlock
+
+    from notion_mcp.server import _build_collection_schema
+
+    if columns:
+        col_specs = json.loads(columns)
+        space_id = client.current_space.id if client.current_space else ""
+        schema = _build_collection_schema(
+            [s for s in col_specs if s.get("type") not in ("rollup", "formula")],
+            client,
+            space_id,
+        )
+        own_pointer = {"id": "<own>", "table": "collection", "spaceId": space_id}
+        for spec in col_specs:
+            if spec.get("type") in ("rollup", "formula"):
+                spec["_own_schema"] = schema
+                spec["_own_pointer"] = own_pointer
+                spec["_space_id"] = space_id
+        schema = _build_collection_schema(col_specs, client, space_id)
+    else:
+        schema = {"title": {"name": "Name", "type": "title"}}
+    if full_page:
+        cvb = parent.children.add_new(CollectionViewPageBlock)
+    else:
+        cvb = parent.children.add_new(CollectionViewBlock)
+    collection_id = client.create_record("collection", parent=cvb, schema=schema)
+    cvb.collection = client.get_collection(collection_id)
+    cvb.title = title
+    if icon:
+        cvb.icon = icon
+    cvb.views.add_new(view_type="table")
+    typer.echo(f"Created database: {cvb.id}")
+
+
+@app.command(name="add-column")
+def add_column(
+    database_id: str = typer.Argument(..., help="Database block URL/ID or collection ID"),
+    name: str = typer.Option(..., "--name", help="Column name"),
+    type: str = typer.Option(..., "--type", help="Column type (text, number, select, relation, formula, rollup, ...)"),
+    options: str = typer.Option("", "--options", "-o", help='select: ["A","B"]; relation: {"target_database_id":...,"limit":1?,"reverse_name"?}; formula: {"expression":"..."} (refs as {"Prop Name"}); rollup: {"relation_property","target_property","aggregation"?}'),
+    token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
+) -> None:
+    """Add a column to an existing database."""
+    _check_write_enabled()
+    client = get_client(token_arg=token)
+    collection = _resolve_collection(client, database_id)
+    if collection is None:
+        typer.echo(f"Database not found: {database_id}", err=True)
+        raise typer.Exit(1)
+    from notion_mcp.server import _build_relation_prop, _build_rollup_prop, _fev
+
+    import uuid as _uuid
+
+    prop_id = _uuid.uuid4().hex[:4]
+    prop = {"name": name, "type": type}
+    if type in ("select", "multi_select", "status") and options:
+        prop["options"] = [
+            {"value": o, "color": "default"} for o in json.loads(options)
+        ]
+    if type in ("relation", "formula", "rollup"):
+        spec = json.loads(options) if options else {}
+        spec.setdefault("name", name)
+        spec["type"] = type
+        space_id = client.current_space.id if client.current_space else ""
+        if type == "relation":
+            prop.update(_build_relation_prop(spec, client, space_id))
+        elif type == "formula":
+            expr = spec.get("expression", "")
+            if not expr:
+                typer.echo("formula columns need --options with 'expression'", err=True)
+                raise typer.Exit(1)
+            own_pointer = {
+                "id": getattr(collection, "id", ""),
+                "table": "collection",
+                "spaceId": space_id,
+            }
+            prop_meta = {}
+            for pid2, p2 in (collection.get("schema") or {}).items():
+                meta = {"property": pid2}
+                if p2.get("type") == "relation":
+                    tgt = p2.get("collection_id") or (p2.get("collection_pointer") or {}).get("id")
+                    meta["collection"] = {"id": tgt, "table": "collection", "spaceId": space_id}
+                else:
+                    meta["collection"] = own_pointer
+                prop_meta[p2.get("name", "")] = meta
+            prop["version"] = "v2"
+            prop["formula2"] = {
+                "code": _fev.encode_expr(expr, prop_meta),
+                "result_type": {"type": "text"},
+            }
+        elif type == "rollup":
+            spec["_own_schema"] = collection.get("schema") or {}
+            prop.update(_build_rollup_prop(spec, client))
+    current_schema = collection.get("schema") or {}
+    current_schema[prop_id] = prop
+    collection.set("schema", current_schema)
+    typer.echo(f"Added column '{name}' (type: {type}, id: {prop_id})")
+
+
+@app.command(name="create-media")
+def create_media(
+    parent_id: str = typer.Argument(..., help="Parent page URL or ID"),
+    type: str = typer.Option(..., "--type", help="image | video | audio | file | pdf"),
+    url: str = typer.Option("", "--url", help="Source URL"),
+    file_path: str = typer.Option("", "--file", help="Local file path to upload"),
+    caption: str = typer.Option("", "--caption", help="Caption text"),
+    token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
+) -> None:
+    """Create a media block from a URL or by uploading a local file."""
+    _check_write_enabled()
+    client = get_client(token_arg=token)
+    parent = client.get_block(parent_id)
+    if parent is None:
+        typer.echo(f"Parent not found: {parent_id}", err=True)
+        raise typer.Exit(1)
+    from notion.block import ImageBlock, VideoBlock, AudioBlock, FileBlock, PDFBlock
+
+    TYPE_MAP = {"image": ImageBlock, "video": VideoBlock, "audio": AudioBlock, "file": FileBlock, "pdf": PDFBlock}
+    cls = TYPE_MAP.get(type)
+    if cls is None:
+        typer.echo(f"Unsupported media type: {type}", err=True)
+        raise typer.Exit(1)
+    block = parent.children.add_new(cls)
+    if file_path:
+        block.upload_file(file_path)
+    elif url:
+        block.source = url
+        block.display_source = url
+    else:
+        typer.echo("Either --url or --file is required", err=True)
+        raise typer.Exit(1)
+    if caption:
+        block.caption = caption
+    typer.echo(f"Created {type} block: {block.id}")
+
+
+@app.command(name="create-embed")
+def create_embed(
+    parent_id: str = typer.Argument(..., help="Parent page URL or ID"),
+    type: str = typer.Option("embed", "--type", help="embed, bookmark, tweet, gist, figma, loom, typeform, codepen, maps, invision, framer, drive, html, miro, excalidraw, replit, deepnote, sketch, abstract, mixpanel"),
+    url: str = typer.Option(..., "--url", help="Source URL to embed"),
+    caption: str = typer.Option("", "--caption", help="Caption text"),
+    token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
+) -> None:
+    """Create an embed block."""
+    _check_write_enabled()
+    client = get_client(token_arg=token)
+    parent = client.get_block(parent_id)
+    if parent is None:
+        typer.echo(f"Parent not found: {parent_id}", err=True)
+        raise typer.Exit(1)
+    from notion_mcp.server import _embed_type_map
+
+    TYPE_MAP = _embed_type_map()
+    cls = TYPE_MAP.get(type)
+    if cls is None:
+        supported = ", ".join(sorted(TYPE_MAP.keys()))
+        typer.echo(f"Unsupported embed type: {type} (supported: {supported})", err=True)
+        raise typer.Exit(1)
+    block = parent.children.add_new(cls)
+    block.source = url
+    block.display_source = url
+    if caption:
+        block.caption = caption
+    typer.echo(f"Created {type} block: {block.id}")
+
+
+@app.command(name="create-table")
+def create_table(
+    parent_id: str = typer.Argument(..., help="Parent page URL or ID"),
+    rows: int = typer.Option(3, "--rows", help="Number of rows"),
+    columns: int = typer.Option(3, "--columns", help="Number of columns"),
+    token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
+) -> None:
+    """Create a simple table block."""
+    _check_write_enabled()
+    client = get_client(token_arg=token)
+    parent = client.get_block(parent_id)
+    if parent is None:
+        typer.echo(f"Parent not found: {parent_id}", err=True)
+        raise typer.Exit(1)
+    import uuid as _uuid
+
+    table_id = str(_uuid.uuid4())
+    client.create_record(
+        "block",
+        parent=parent,
+        type="table",
+        format={"table_columns": columns, "table_blocks": []},
+        id=table_id,
+    )
+    typer.echo(f"Created table ({rows}x{columns}): {table_id}")
+
+
+@app.command(name="create-columns")
+def create_columns(
+    parent_id: str = typer.Argument(..., help="Parent page URL or ID"),
+    count: int = typer.Option(2, "--count", "-n", help="Number of columns"),
+    token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
+) -> None:
+    """Create a column layout with N empty columns."""
+    _check_write_enabled()
+    client = get_client(token_arg=token)
+    parent = client.get_block(parent_id)
+    if parent is None:
+        typer.echo(f"Parent not found: {parent_id}", err=True)
+        raise typer.Exit(1)
+    from notion.block import ColumnListBlock, ColumnBlock
+
+    cl = parent.children.add_new(ColumnListBlock)
+    for _ in range(max(1, count)):
+        cl.children.add_new(ColumnBlock)
+    typer.echo(f"Created column layout: {cl.id} ({count} columns)")
+
+
+@app.command(name="import-csv")
+def import_csv(
+    parent_id: str = typer.Argument(..., help="Parent page URL or ID"),
+    file: str = typer.Option(..., "--file", "-f", help="Path to a .csv file"),
+    title: str = typer.Option("Imported CSV", "--title", help="Database title"),
+    token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
+) -> None:
+    """Import a CSV file as a new inline database."""
+    _check_write_enabled()
+    client = get_client(token_arg=token)
+    parent = client.get_block(parent_id)
+    if parent is None:
+        typer.echo(f"Parent not found: {parent_id}", err=True)
+        raise typer.Exit(1)
+    from notion_mcp.server import _import_csv_impl
+
+    try:
+        db_id = _import_csv_impl(client, parent, file, title)
+    except (FileNotFoundError, ValueError) as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Created database from CSV: {db_id}")

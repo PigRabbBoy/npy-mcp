@@ -1,6 +1,6 @@
 [project]
 name = "npy-cli"
-version = "0.8.1"
+version = "0.9.0"
 description = "CLI for Notion (cookie-based, powered by npy-core)"
 requires-python = ">=3.12"
 dependencies = [

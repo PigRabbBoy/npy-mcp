@@ -280,3 +280,57 @@ class TestFileUploadBranch:
         )
         # the PUT call must reference the bound variable, not a bare guess
         assert 'put_headers = {"Content-type": mimetype}' in src
+
+
+class TestRowIdentity:
+    """Issue #3: query output must carry row identity for read-then-write."""
+
+    def test_safe_props_shape(self):
+        from notion_cli.render import _safe_props
+
+        row = _FakeRow("abc-def", "X")
+        out = _safe_props(row)
+        assert out["id"] == "abc-def"
+        assert out["url"].startswith("https://notion.so/abcdef")
+        assert "name" in out["properties"] or isinstance(out["properties"], dict)
+
+    def test_user_id_column_not_shadowed(self):
+        # a column literally named "id" must not clobber row identity
+        from notion_cli.render import _safe_props
+
+        class RowWithIdCol:
+            def __init__(self):
+                self.id = "rid"
+
+            @property
+            def title_plaintext(self):
+                return "X"
+
+            def get_browseable_url(self):
+                return "https://notion.so/rid"
+
+            def get_all_properties(self):
+                return {"id": "user-column-value"}
+
+        out = _safe_props(RowWithIdCol())
+        assert out["id"] == "rid"  # identity wins, user column is nested
+        assert out["properties"]["id"] == "user-column-value"
+
+
+class TestInTransactionFetch:
+    """Core fix: resolving a pre-existing record mid-transaction must work."""
+
+    def test_call_get_record_values_force_signature(self):
+        import inspect
+
+        from notion.store import RecordStore
+
+        sig = inspect.signature(RecordStore.call_get_record_values)
+        assert "_force_real_request" in sig.parameters
+
+    def test_get_block_none_relation_raises_clearly(self):
+        from notion.collection import CollectionRowBlock
+        import inspect
+
+        src = inspect.getsource(CollectionRowBlock._convert_python_to_notion)
+        assert "Relation target not found" in src

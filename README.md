@@ -39,7 +39,7 @@ This is a monorepo with three packages:
 | Package | Description | Install |
 |---|---|---|
 | `npy-core` | Core library (NotionClient, Block, Collection, markdown) | `uv add npy-core` |
-| `npy-cli` | CLI tool with 15 commands | `uv add npy-cli` |
+| `npy-cli` | CLI tool with 23 commands (full MCP parity) | `uv add npy-cli` |
 | `npy-mcp` | MCP server (stdio + HTTP) with 23 tools | `uv add npy-mcp` |
 
 ## CLI
@@ -568,7 +568,7 @@ notion-py/
 │   │   ├── auth.py               ← Token + Space resolution
 │   │   └── operations.py         ← Transaction operation builder
 │   ├── npy-cli/src/notion_cli/   ← CLI (Typer)
-│   │   ├── cli.py                ← 15 commands
+│   │   ├── cli.py                ← 23 commands
 │   │   ├── render.py             ← Markdown/JSON formatters
 │   │   └── client_factory.py     ← Client builder from auth config
 │   └── npy-mcp/src/notion_mcp/   ← MCP server
