@@ -707,13 +707,15 @@ class CollectionRowBlock(PageBlock):
                     and os.path.exists(item)
                 ):
                     # local path → upload to Notion's S3, then attach
+                    mimetype = (
+                        mimetypes.guess_type(item)[0] or "application/octet-stream"
+                    )
                     upload = self._client.post(
                         "getUploadSpaceFileUrl",
                         {
                             "bucket": "secure",
                             "name": os.path.split(item)[-1],
-                            "contentType": mimetypes.guess_type(item)[0]
-                            or "application/octet-stream",
+                            "contentType": mimetype,
                             "record": {
                                 "table": "block",
                                 "id": self.id,

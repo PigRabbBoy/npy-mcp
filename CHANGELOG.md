@@ -284,3 +284,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   schema shape matched against UI-created databases (fpp `property` +
   `collection` metas, `result_type` snake_case, rollup `version: v2`).
 - 112 tests (+27).
+
+## [0.8.1] - 2026-09-02
+
+### Fixed
+- **Issue #1**: writing a local file path to a `files` property crashed with
+  `NameError: name 'mimetype' is not defined` — the MIME type was inlined
+  into the upload payload but never bound; the S3 PUT then read the missing
+  name. Now bound once at the top of the local-path branch (matching
+  block.py), live-verified with a real upload.
+
+### Docs (Issue #2)
+- TOOLS.md: `add_column` documents relation/formula/rollup specs including
+  `autoRelate` semantics (omitting `reverse_name` = one-way, no backref
+  column); create_database type list includes formula/rollup/time columns;
+  write-tools heading corrected 9 → 16; `full_schema`/`fetch_all` documented.
+- README: Write gate section now points at the "All 23 tools" table instead
+  of maintaining a second, stale enumeration (7 read / 16 write).

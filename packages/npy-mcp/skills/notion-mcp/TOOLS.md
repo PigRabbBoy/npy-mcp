@@ -80,6 +80,7 @@ Fetch a Notion database schema and sample rows.
 |---|---|---|---|
 | `database_id` | string | — | Database block URL/ID or collection ID (required) |
 | `sample_rows` | int | 5 | Number of sample rows to show |
+| `full_schema` | bool | false | Also dump full column definitions (relation targets, rollup configs, formula expressions, select options) — for idempotent provisioning diffs |
 
 **Example call:**
 ```json
@@ -98,6 +99,7 @@ Query a Notion database and return rows.
 |---|---|---|---|
 | `database_id` | string | — | Database block URL/ID or collection ID (required) |
 | `limit` | int | 20 | Maximum rows to return |
+| `fetch_all` | bool | false | Fetch every row regardless of limit (the internal API has no cursor — one request returns the full set) |
 
 **Example call:**
 ```json
@@ -108,7 +110,7 @@ Query a Notion database and return rows.
 
 ---
 
-## Write tools (9 — gated by `NOTION_ALLOW_WRITE=1`)
+## Write tools (16 — gated by `NOTION_ALLOW_WRITE=1`)
 
 ### `create_page`
 
@@ -320,7 +322,7 @@ Create a new database (collection) under a parent page.
 ]
 ```
 
-**Supported column types:** title, text, number, select, multi_select, date, person, checkbox, url, email, phone_number, file, relation, status.
+**Supported column types:** title, text, number, select, multi_select, date, person, checkbox, url, email, phone_number, file, relation, formula, rollup, status, created_time, last_edited_time, created_by, last_edited_by.
 
 **Example call:**
 ```json
@@ -340,7 +342,7 @@ Add a column to an existing database.
 | `database_id` | string | — | Database URL or ID (required) |
 | `name` | string | — | Column name (required) |
 | `type` | string | — | Column type (required) |
-| `options` | string | "" | select/multi_select/status: JSON array of values. relation: `{"target_database_id","limit":1?,"reverse_name"?}`. formula: `{"expression"}` (refs as `{"Prop Name"}`). rollup: `{"relation_property","target_property","aggregation"?}` |
+| `options` | string | "" | select/multi_select/status: JSON array of values. relation: `{"target_database_id","limit":1?,"reverse_name"?}` — omitting `reverse_name` creates a one-way relation with NO back-reference column (`autoRelate.enabled=false`); passing it enables two-way sync and is the only way to build a self-relation. formula: `{"expression"}` (refs as `{"Prop Name"}`). rollup: `{"relation_property","target_property","aggregation"?}` |
 
 **Example call:**
 ```json

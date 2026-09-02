@@ -266,3 +266,17 @@ class TestFetchAllSemantics:
             limit=-1,
         )
         assert q.limit == -1  # marker recognized by execute()
+
+class TestFileUploadBranch:
+    def test_mimetype_bound_for_local_paths(self, tmp_path):
+        """Issue #1: local-path branch must bind mimetype before S3 PUT."""
+        import inspect
+
+        from notion.collection import CollectionRowBlock
+
+        src = inspect.getsource(CollectionRowBlock._convert_python_to_notion)
+        assert 'mimetype = (' in src or 'mimetype =' in src, (
+            "mimetype must be bound to a name before put_headers uses it"
+        )
+        # the PUT call must reference the bound variable, not a bare guess
+        assert 'put_headers = {"Content-type": mimetype}' in src

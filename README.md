@@ -421,11 +421,12 @@ Claude Desktop config for remote:
 
 ### Write gate
 
-By default, the MCP server exposes only **6 read tools**. Set
-`NOTION_ALLOW_WRITE=1` to unlock **9 additional write tools**:
-
-- Read: `search`, `get_page`, `get_block`, `list_pages`, `get_database`, `query_database`
-- Write: `create_page`, `append_blocks`, `update_block`, `delete_block`, `move_block`, `add_alias`, `add_database_row`, `update_database_row`, `delete_database_row`
+By default, the MCP server exposes only **7 read tools**. Set
+`NOTION_ALLOW_WRITE=1` to unlock the **16 write tools** — see the
+["All 23 tools"](#all-23-tools) table above for the full list (search,
+get_page, get_block, get_image, list_pages, get_database, query_database —
+plus create/update/delete/move, database provisioning with
+relation/formula/rollup columns, media/embed/table/columns, CSV import).
 
 ## AI Skills
 
