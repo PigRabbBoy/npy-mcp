@@ -340,7 +340,7 @@ Add a column to an existing database.
 | `database_id` | string | — | Database URL or ID (required) |
 | `name` | string | — | Column name (required) |
 | `type` | string | — | Column type (required) |
-| `options` | string | "" | For select/multi_select/status: JSON array of options |
+| `options` | string | "" | select/multi_select/status: JSON array of values. relation: `{"target_database_id","limit":1?,"reverse_name"?}`. formula: `{"expression"}` (refs as `{"Prop Name"}`). rollup: `{"relation_property","target_property","aggregation"?}` |
 
 **Example call:**
 ```json
