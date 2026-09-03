@@ -21,7 +21,7 @@ unpy-mcp/
 ├── packages/
 │   ├── unpy-core/src/unpy/    ← Core library (was `notion/` before the unpy rename)
 │   ├── unpy-cli/src/unpy_cli/ ← CLI (Typer, 25 commands)
-│   └── unpy-mcp/src/unpy_mcp/ ← MCP server (stdio + HTTP, 25 tools)
+│   └── unpy-mcp/src/unpy_mcp/ ← MCP server (stdio + HTTP, 27 tools)
 ├── tests/                      ← pytest + vcr.py (126 tests)
 ├── docs/adr/                   ← 5 Architecture Decision Records
 ├── CONTEXT.md                  ← Domain glossary
@@ -90,7 +90,7 @@ NOTION_MCP_AUTH_TOKEN=secret python -m unpy_mcp --transport http --port 8000
 ### MCP Server (`unpy-mcp`)
 
 - **MCP Python SDK v2** (`MCPServer` + decorator pattern).
-- 25 tools (8 read + 17 write), write tools gated by `NOTION_ALLOW_WRITE=1`.
+- 27 tools (8 read + 19 write), write tools gated by `NOTION_ALLOW_WRITE=1`.
 - Two transports: `stdio` (local, default) and `streamable-http` (remote).
 - HTTP transport supports Bearer token auth via `NOTION_MCP_AUTH_TOKEN`.
 

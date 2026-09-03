@@ -420,6 +420,17 @@ class RecordStore(object):
     def run_local_operation(self, table, id, path, command, args):
         # schema updates arrive wrapped (updateCollectionPropertySchema +
         # primitiveOp) — unwrap to a plain schema update for the local store
+        if command == "updateCollectionDeletedPropertySchema":
+            # mirror of updateCollectionPropertySchema for the deleted_schema
+            # store (Notion UI moves properties there on delete)
+            primitive = (args or {}).get("primitiveOp") or {}
+            args = primitive.get("args", {})
+            if isinstance(args, dict) and len(args) == 1 and path == ["deleted_schema"]:
+                pid, prop = next(iter(args.items()))
+                path = ["deleted_schema", pid]
+                args = prop
+                command = "set"
+
         if command == "updateCollectionPropertySchema":
             primitive = (args or {}).get("primitiveOp") or {}
             command = primitive.get("command", "update")
@@ -428,7 +439,10 @@ class RecordStore(object):
                 pid, prop = next(iter(args.items()))
                 path = ["schema", pid]
                 args = prop
-                command = "update"
+                # property deletion arrives as {pid: None} (mirrors the
+                # Notion UI's two-op delete) — keep it as a set-to-None so
+                # the local store mirrors the server state
+                command = "update" if prop is not None else "set"
 
         with self._mutex:
             path = deepcopy(path)

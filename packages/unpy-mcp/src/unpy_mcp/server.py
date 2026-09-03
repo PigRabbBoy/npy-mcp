@@ -481,6 +481,16 @@ class _FormulaCtx:
         raw = (row_data or {}).get("properties", {}).get(pid)
         return self._coerce(raw, ptype, tschema)
 
+    def resolve_prop_ref(self, name_or_id):
+        """prop("Name") style references inside formula source strings.
+
+        The stored formula2 code from encode_expr keeps raw prop("Name")
+        calls; resolve the name against the context schema (falling back to
+        the row's own collection schema) and evaluate that property.
+        """
+        pid = _find_prop_id(self.schema, name_or_id) or name_or_id
+        return self._value_for_prop(self.row, pid)
+
     def resolve_ref(self, n):
         meta = self.refs[n] if n < len(self.refs) else {}
         pid = meta.get("property")
@@ -617,7 +627,8 @@ def _eval_formula_value(
             v = _read_prop_display(client, rd, tgt_pid, tschema)
             if v != "" and v is not None:
                 out.append(str(v))
-        return ", ".join(out)
+        # "" would be indistinguishable from an unevaluated value (issue #7)
+        return ", ".join(out) if out else "(empty)"
 
     if ptype != "formula":
         return None
@@ -625,7 +636,7 @@ def _eval_formula_value(
     # ---- Interpreter path (full formula language) -------------------------
     _src_check, _ = _fev.build_expr(prop)
     if not _src_check.strip():
-        return ""
+        return None
     ctx = _FormulaCtx(client, row_block_data, schema, prop, depth)
     try:
         val = _fev.evaluate(prop, ctx)
@@ -997,6 +1008,11 @@ def _tree_to_markdown(client: NotionClient, block, depth: int, level: int = 0) -
         lines.append(("  " * level) + md)
     if depth == 0:
         return lines
+    # Inline databases: the stub already directs callers to get_database —
+    # descending into children here fetches every row of every database and
+    # times out on database-heavy pages (issue #10)
+    if btype in ("collection_view", "collection_view_page"):
+        return lines
     children = getattr(block, "children", None)
     if children is None:
         return lines
@@ -1182,10 +1198,11 @@ def get_database(
     Returns:
         Database name, column schema, and sample row data as markdown.
 
-    Note: Formula and rollup columns show '(computed)' as placeholder.
-        Notion evaluates these browser-side (JavaScript) and does not return
-        values via the API. This is a known limitation of the cookie-based
-        internal API — not a bug.
+    Note: Formula and rollup columns are evaluated client-side where the
+        expression is supported (see formula_eval coverage). Values that
+        cannot be evaluated show '(computed)'; a rollup with no related rows
+        shows '(empty)'. Evaluated booleans render as Notion's own
+        'true' / 'false' strings.
     """
     client = _get_client()
     block = client.get_block(database_id)
@@ -1224,6 +1241,12 @@ def get_database(
     slug_to_name: dict[str, str] = {}
     formula_slugs: set[str] = set()
     lines = [f"# {name}", ""]
+    # Own identifiers: the block id callers pass in and the collection
+    # ("data source") id that relation targets point at — two different id
+    # spaces, and callers need both (issue #9)
+    lines.append(f"  block id: {block.id}")
+    lines.append(f"  data source id: {collection.id}")
+    lines.append("")
     lines.append("## Columns")
     for prop in schema:
         pname = prop.get("name", "?")
@@ -1238,6 +1261,8 @@ def get_database(
         lines.append("## Full schema")
         raw_schema = collection.get("schema") or {}
         for pid, p in raw_schema.items():
+            if p is None:
+                continue  # tombstoned (deleted) property
             ptype = p.get("type", "?")
             lines.append(f"  - **{p.get('name', '?')}** ({ptype}) [id: {pid}]")
             if ptype == "relation":
@@ -1333,10 +1358,11 @@ def query_database(
     Returns:
         Markdown table of database rows with all properties.
 
-    Note: Formula and rollup columns show '(computed)' as placeholder.
-        Notion evaluates these browser-side (JavaScript) and does not return
-        values via the API. This is a known limitation of the cookie-based
-        internal API — not a bug.
+    Note: Formula and rollup columns are evaluated client-side where the
+        expression is supported (see formula_eval coverage). Values that
+        cannot be evaluated show '(computed)'; a rollup with no related rows
+        shows '(empty)'. Evaluated booleans render as Notion's own
+        'true' / 'false' strings.
     """
     client = _get_client()
     block = client.get_block(database_id)
@@ -1526,6 +1552,51 @@ def _import_csv_impl(client, parent, file_path: str, title: str = "") -> str:
         except Exception:
             pass  # Skip rows that fail
     return cvb.id
+
+
+def _resolve_collection_for_write(client, database_id):
+    """Resolve a database URL/ID to a collection object for write tools.
+
+    Returns the collection, or an error string when unresolvable.
+    """
+    block = client.get_block(database_id)
+    collection = getattr(block, "collection", None) if block is not None else None
+    if collection is None and block is not None and block.get("view_ids"):
+        for vid in block.get("view_ids") or []:
+            cv_data = client._store._values.get("collection_view", {}).get(vid)
+            if cv_data:
+                ptr = cv_data.get("format", {}).get("collection_pointer", {})
+                if ptr.get("id"):
+                    try:
+                        collection = client.get_collection(ptr["id"])
+                        break
+                    except Exception:
+                        pass
+    if collection is None:
+        try:
+            collection = client.get_collection(database_id)
+        except Exception:
+            pass
+    if collection is None:
+        return f"Database not found: {database_id}"
+    return collection
+
+
+def _find_column(schema: dict, identifier: str):
+    """Find a property in a schema dict by property id or name.
+
+    Returns (prop_id, prop) or (None, None).
+    """
+    ident = (identifier or "").strip()
+    if ident in schema:
+        return ident, schema[ident]
+    ident_lower = ident.lower()
+    for pid, prop in schema.items():
+        if prop is None or prop.get("alive") is False:
+            continue  # tombstoned (deleted) property
+        if (prop.get("name") or "").strip().lower() == ident_lower:
+            return pid, prop
+    return None, None
 
 
 def _build_collection_schema(col_specs: list, client=None, parent_space_id: str = "") -> dict:
@@ -1815,53 +1886,11 @@ if _WRITE_ENABLED:
             f"(discussion: {result['discussion_id']})"
         )
 
-    @mcp.tool()
-    def create_page(
-        parent_id: str,
-        title: str,
-        icon: str = "",
-    ) -> str:
-        """Create a new page under a parent block.
+    def _add_blocks_from_specs(parent, block_specs: list) -> int:
+        """Create child blocks from [{type, text, checked?, icon?, language?}] specs.
 
-        Args:
-            parent_id: Parent page URL or ID
-            title: Title for the new page
-            icon: Optional emoji icon (e.g. "📄")
-
-        Returns:
-            URL of the created page.
+        Returns the number of blocks added. Used by append_blocks and create_page.
         """
-        client = _get_client()
-        parent = client.get_block(parent_id)
-        if parent is None:
-            return f"Parent not found: {parent_id}"
-        page = parent.children.add_new(PageBlock, title=title)
-        if icon:
-            page.icon = icon
-        return page.get_browseable_url()
-
-    @mcp.tool()
-    def append_blocks(
-        page_id: str,
-        blocks: str,
-    ) -> str:
-        """Append blocks to a page. blocks is a JSON array of {type, text, checked?}.
-
-        Supported types: text, todo, header, subheader, subsubheader, callout,
-        bulleted_list, numbered_list, quote, code, divider, toggle, equation.
-
-        Args:
-            page_id: Parent page URL or ID
-            blocks: JSON array string, e.g. [{"type":"text","text":"Hello"},{"type":"todo","text":"Task","checked":true}]
-
-        Returns:
-            Confirmation with count of blocks added.
-        """
-        client = _get_client()
-        parent = client.get_block(page_id)
-        if parent is None:
-            return f"Page not found: {page_id}"
-        block_specs = json.loads(blocks)
         TYPE_MAP = {
             "text": TextBlock,
             "todo": TodoBlock,
@@ -1887,8 +1916,67 @@ if _WRITE_ENABLED:
                 kwargs["checked"] = spec["checked"]
             if btype == "callout" and "icon" in spec:
                 kwargs["icon"] = spec["icon"]
+            if btype == "code" and spec.get("language"):
+                kwargs["language"] = spec["language"]
             parent.children.add_new(cls, **kwargs)
             count += 1
+        return count
+
+    @mcp.tool()
+    def create_page(
+        parent_id: str,
+        title: str,
+        icon: str = "",
+        blocks: str = "",
+    ) -> str:
+        """Create a new page under a parent block, optionally with content.
+
+        Args:
+            parent_id: Parent page URL or ID
+            title: Title for the new page
+            icon: Optional emoji icon (e.g. "📄")
+            blocks: Optional JSON array of blocks (same format as
+                append_blocks) — creates the page with content in one step.
+
+        Returns:
+            "Created page <id> — <url>" so the id can be used directly in
+            follow-up calls.
+        """
+        client = _get_client()
+        parent = client.get_block(parent_id)
+        if parent is None:
+            return f"Parent not found: {parent_id}"
+        page = parent.children.add_new(PageBlock, title=title)
+        if icon:
+            page.icon = icon
+        if blocks:
+            _add_blocks_from_specs(page, json.loads(blocks))
+        return f"Created page {page.id} — {page.get_browseable_url()}"
+
+    @mcp.tool()
+    def append_blocks(
+        page_id: str,
+        blocks: str,
+    ) -> str:
+        """Append blocks to a page. blocks is a JSON array of {type, text, checked?}.
+
+        Supported types: text, todo, header, subheader, subsubheader, callout,
+        bulleted_list, numbered_list, quote, code, divider, toggle, equation.
+        Code blocks accept an optional "language" (Notion language id, e.g.
+        "python", "typescript", "json"); unknown values fall back to plain text.
+
+        Args:
+            page_id: Parent page URL or ID
+            blocks: JSON array string, e.g. [{"type":"text","text":"Hello"},{"type":"todo","text":"Task","checked":true}]
+
+        Returns:
+            Confirmation with count of blocks added.
+        """
+        client = _get_client()
+        parent = client.get_block(page_id)
+        if parent is None:
+            return f"Page not found: {page_id}"
+        count = _add_blocks_from_specs(parent, json.loads(blocks))
         return f"Added {count} block(s) to {page_id}"
 
     @mcp.tool()
@@ -2379,6 +2467,99 @@ if _WRITE_ENABLED:
             ])
 
         return f"Added column '{name}' (type: {type}, id: {prop_id}) to database"
+
+    @mcp.tool()
+    def rename_column(
+        database_id: str,
+        column: str,
+        new_name: str,
+    ) -> str:
+        """Rename a database column (low-risk, reversible schema change).
+
+        Args:
+            database_id: Database URL or ID
+            column: Current column name or property id
+            new_name: The new column name
+
+        Returns:
+            Confirmation with the property id and new name.
+        """
+        client = _get_client()
+        collection = _resolve_collection_for_write(client, database_id)
+        if isinstance(collection, str):
+            return collection
+        schema = collection.get("schema") or {}
+        prop_id, prop = _find_column(schema, column)
+        if prop_id is None:
+            return f"Column not found: '{column}'. Use get_database to list columns."
+        if prop.get("type") == "title":
+            # Renaming the title column is fine — only its NAME changes
+            pass
+        new_prop = dict(prop)
+        new_prop["name"] = new_name
+        from unpy.operations import build_collection_schema_update
+        client.submit_transaction([
+            build_collection_schema_update(collection.id, prop_id, new_prop)
+        ])
+        return (
+            f"Renamed column '{prop.get('name')}' to '{new_name}' "
+            f"(id: {prop_id})"
+        )
+
+    @mcp.tool()
+    def delete_column(
+        database_id: str,
+        column: str,
+        permanently: bool = False,
+    ) -> str:
+        """Delete a database column. Destroys the data stored in that
+        property for every row — confirm with the user before calling.
+
+        Args:
+            database_id: Database URL or ID
+            column: Column name or property id
+            permanently: Deprecated/ignored — Notion's own flow always
+                moves the property to its deleted schema (recoverable in
+                the UI). The argument exists for signature compatibility.
+
+        Returns:
+            Confirmation with the removed column's id.
+        """
+        client = _get_client()
+        collection = _resolve_collection_for_write(client, database_id)
+        if isinstance(collection, str):
+            return collection
+        schema = collection.get("schema") or {}
+        prop_id, prop = _find_column(schema, column)
+        if prop_id is None:
+            return f"Column not found: '{column}'. Use get_database to list columns."
+        if prop.get("type") == "title":
+            return (
+                "Error: the title column cannot be deleted — every database "
+                "must have exactly one title."
+            )
+        # Mirror the Notion UI exactly (captured from
+        # TableHeaderCell.handleDeleteAccept): move the property into
+        # deleted_schema, then null it out of the live schema — both in one
+        # transaction. The property stays recoverable in Notion's own
+        # deleted-schema store either way.
+        client.submit_transaction([
+            {
+                "id": collection.id,
+                "path": ["deleted_schema"],
+                "table": "collection",
+                "command": "updateCollectionDeletedPropertySchema",
+                "args": {"primitiveOp": {"command": "update", "args": {prop_id: prop}}},
+            },
+            {
+                "id": collection.id,
+                "path": ["schema"],
+                "table": "collection",
+                "command": "updateCollectionPropertySchema",
+                "args": {"primitiveOp": {"command": "update", "args": {prop_id: None}}},
+            },
+        ])
+        return f"Deleted column '{prop.get('name')}' (id: {prop_id})"
 
     @mcp.tool()
     def create_media(

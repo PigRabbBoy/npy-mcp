@@ -58,7 +58,7 @@ class TestWriteGate:
         async with Client(mcp) as client:
             result = await client.list_tools()
             tool_names = [t.name for t in result.tools]
-            assert len(result.tools) == 25
+            assert len(result.tools) == 27
             assert "create_page" in tool_names
             assert "delete_block" in tool_names
             assert "add_database_row" in tool_names

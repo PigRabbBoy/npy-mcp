@@ -196,10 +196,15 @@ class Collection(Record):
     def get_schema_properties(self):
         """
         Fetch a flattened list of all properties in the collection's schema.
+
+        Deleted properties arrive as None entries (the Notion UI nulls them
+        out of the live schema) — skip those.
         """
         properties = []
-        schema = self.get("schema")
+        schema = self.get("schema") or {}
         for id, item in schema.items():
+            if item is None or item.get("alive") is False:
+                continue
             prop = {"id": id, "slug": slugify(item["name"])}
             prop.update(item)
             properties.append(prop)

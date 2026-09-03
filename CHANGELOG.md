@@ -6,6 +6,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`rename_column` / `delete_column` tools** (issue #11). Schema changes
+  are no longer one-way: rename is a plain schema update; delete mirrors
+  Notion's own two-op flow (move the property into `deleted_schema`, null
+  it out of the live schema) so it stays recoverable in the UI. The title
+  column cannot be renamed to break the schema or deleted.
+- **`create_page` accepts `blocks`** (issue #12) — creates the page with
+  content in one step using the same JSON array `append_blocks` takes,
+  closing the empty-page failure window between the old two calls.
+- **`create_page` returns the page id** alongside the URL
+  (`Created page <id> — <url>`), so follow-up calls don't need to parse
+  the id out of the URL (issue #12).
+- **`append_blocks` code blocks accept `language`** (issue #13), e.g.
+  `{"type":"code","text":"…","language":"python"}`; unknown values fall
+  back to plain text.
+- **`get_database` reports its own identifiers** (issue #9): the block id
+  and the data source (collection) id now appear in the header — callers
+  no longer need to cross-reference relation targets to learn them.
+
+### Fixed
+- **`append_blocks` no longer strips leading whitespace from code blocks**
+  (issue #8). Code content went through the markdown converter, which
+  treats indented lines as markdown and drops the indentation — silently
+  corrupting Python, YAML, Makefiles, diffs. `CodeBlock` now stores text
+  verbatim (verified byte-identical round-trip for 4/8/12-space, tab and
+  3-space indents).
+- **Formula/rollup rendering matches the documented contract** (issue #7).
+  Empty rollups (no related rows) now show `(empty)` instead of a blank
+  that was indistinguishable from an unevaluated value; an empty formula
+  body shows `(computed)` instead of blank; `prop("Name")` references
+  inside formula source strings now evaluate (previously any formula
+  using them fell back to `(computed)`); docstrings describe the actual
+  behavior — evaluated booleans render as Notion's own `true`/`false`.
+- **`get_page` with `depth >= 2` no longer descends into inline
+  databases** (issue #10). Traversing rows of every database on the page
+  caused deterministic timeouts on database-heavy pages; the inline-db
+  stub already directs callers to `get_database`.
+
+### Changed
+- MCP server now exposes **27 tools** (8 read + 19 write).
+
 ## [1.0.2] - 2026-09-03
 
 ### Security

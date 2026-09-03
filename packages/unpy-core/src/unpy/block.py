@@ -549,6 +549,18 @@ class CodeBlock(BasicBlock):
 
     _type = "code"
 
+    # Code content must be stored verbatim — running it through the markdown
+    # converter strips leading whitespace (commonmark treats 4+ spaces as
+    # indented code and the parser drops the rest), corrupting Python, YAML,
+    # Makefiles, etc. (issue #8)
+    title = property_map("title", python_to_api=plaintext_to_notion, markdown=False)
+    title_plaintext = property_map(
+        "title",
+        python_to_api=plaintext_to_notion,
+        api_to_python=notion_to_plaintext,
+        markdown=False,
+    )
+
     language = property_map("language")
     wrap = field_map("format.code_wrap")
 

@@ -150,7 +150,7 @@ token_v2 auth, so this fetch happens through the server's session.
 **Returns:** MCP ImageContent (rendered as an image by the client).
 On error, a text message (block not found or not an image block).
 
-## Write tools (17 — gated by `NOTION_ALLOW_WRITE=1`)
+## Write tools (19 — gated by `NOTION_ALLOW_WRITE=1`)
 
 ### `create_page`
 
@@ -398,6 +398,47 @@ Add a column to an existing database.
 
 ---
 
+### `rename_column`
+
+Rename a database column (low-risk, reversible).
+
+| Arg | Type | Default | Description |
+|---|---|---|---|
+| `database_id` | string | — | Database URL or ID (required) |
+| `column` | string | — | Current column name or property id (required) |
+| `new_name` | string | — | The new column name (required) |
+
+**Example call:**
+```json
+{"database_id": "44444444-4444-4444-8444-444444444444", "column": "Old Name", "new_name": "New Name"}
+```
+
+**Returns:** Confirmation with the property id and new name.
+
+---
+
+### `delete_column`
+
+Delete a database column. Destroys the data in that property for every
+row — confirm with the user before calling. Notion keeps the property
+recoverable in its deleted-schema store.
+
+| Arg | Type | Default | Description |
+|---|---|---|---|
+| `database_id` | string | — | Database URL or ID (required) |
+| `column` | string | — | Column name or property id (required) |
+| `permanently` | bool | false | Deprecated/ignored (Notion's own flow always soft-removes) |
+
+**Example call:**
+```json
+{"database_id": "44444444-4444-4444-8444-444444444444", "column": "Kill"}
+```
+
+**Returns:** Confirmation with the removed column's id. The title column
+cannot be deleted.
+
+---
+
 ### `create_media`
 
 Create a media block (image, video, audio, file, pdf) from URL or file upload.
@@ -529,7 +570,7 @@ On failure, an error message (e.g. invalid thread id).
 |---|---|
 | `NOTION_TOKEN_V2` | Notion session token. Required for all tools. |
 | `NOTION_SPACE_ID` | Bind to a specific space. Affects `search`, `list_pages`. |
-| `NOTION_ALLOW_WRITE` | Set to `1` to enable 17 write tools. Without it, only 8 read tools appear. |
+| `NOTION_ALLOW_WRITE` | Set to `1` to enable 19 write tools. Without it, only 8 read tools appear. |
 | `X-Notion-Token` header | Per-request Notion token (HTTP only). Overrides `NOTION_TOKEN_V2`. |
 | `NOTION_MCP_AUTH_TOKEN` | Bearer token for HTTP auth (not used in stdio). |
 
@@ -562,7 +603,7 @@ client-side. Coverage matches the official function list
 - **Empty semantics**: blank operands propagate as blanks (matching Notion),
   never render as `(computed)`.
 
-Unsupported shapes fall back to `(computed)`; empty formula bodies return "".
+Unsupported shapes fall back to `(computed)`; a rollup with no related rows shows `(empty)`; evaluated booleans render as Notion's own 'true'/'false'.
 Legacy v1 string-expression formulas (`{"expression": ...}`) are not parsed.
 
 ## Error messages

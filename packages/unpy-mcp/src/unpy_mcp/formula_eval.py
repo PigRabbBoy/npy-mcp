@@ -833,6 +833,12 @@ class Interp:
                     out.append(_as_num(v))
             return out
 
+        if name == "prop":
+            # prop("Name") / prop("id") — resolve against the context's schema
+            target = ev_i(0)
+            if isinstance(target, str) and hasattr(ctx, "resolve_prop_ref"):
+                return ctx.resolve_prop_ref(target)
+            raise _Unsupported(f"prop({target!r})")
         if name == "if":
             return self.ev(arg_asts[1]) if _truthy(ev_i(0)) else self.ev(arg_asts[2])
         if name == "ifs":

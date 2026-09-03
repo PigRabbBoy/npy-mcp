@@ -32,13 +32,15 @@ description: >-
 | Delete a database row | `delete_database_row` |
 | Create a database with typed columns | `create_database` |
 | Add a column to an existing database | `add_column` |
+| Rename a database column | `rename_column` |
+| Delete a database column | `delete_column` |
 | Attach an image/file | `create_media` |
 | Embed external content (YouTube, Figma…) | `create_embed` |
 | Add a table / column layout | `create_table` / `create_columns` |
 | Import a CSV as a database | `import_csv` |
 | Comment on a page (new thread or reply) | `add_comment` |
 
-**8 read tools** are always available. **17 write tools** require
+**8 read tools** are always available. **19 write tools** require
 `NOTION_ALLOW_WRITE=1` on the server — if they're missing, write is disabled.
 
 ## Common workflows

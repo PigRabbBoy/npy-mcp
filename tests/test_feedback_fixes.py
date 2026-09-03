@@ -582,3 +582,123 @@ class TestIssue6TitlePropId:
         assert schema["title"]["type"] == "title"
         other = [pid for pid in schema if pid != "title"][0]
         assert re.fullmatch(r"[0-9a-f]{4}", other)
+
+
+# ---- issues #7-#13: feedback batch 2 ----------------------------------------
+
+
+class TestIssue7ComputedPlaceholder:
+    def test_empty_rollup_returns_explicit_marker(self):
+        """A rollup with no related rows returns '(empty)', not '' — blank is
+        indistinguishable from an unevaluated value (issue #7)."""
+        # _eval_formula_value needs a client; exercise the empty-out branch
+        # by monkeypatching the helpers it calls
+        import sys
+
+        sys.path.insert(0, os.path.join(
+            os.path.dirname(__file__), "..", "packages", "unpy-mcp", "src"
+        ))
+        from unittest.mock import patch
+
+        import unpy_mcp.server as srv
+
+        class _FakeClient:
+            pass
+
+        prop = {
+            "type": "rollup",
+            "relation_property": "rel_pid",
+            "target_property": "tgt_pid",
+            "collection_pointer": {"id": "coll1"},
+        }
+        schema = {"rel_pid": {"type": "relation", "name": "Rel"}, "tgt_pid": {"type": "text", "name": "T"}}
+        with patch.object(srv, "_load_schema_cached", return_value={}), \
+             patch.object(srv, "_relation_ids", return_value=[]):
+            result = srv._eval_formula_value(_FakeClient(), {}, "roll1", {"roll1": prop})
+        assert result == "(empty)"
+
+    def test_empty_formula_source_returns_none(self):
+        """An empty formula expression → None → '(computed)', not blank."""
+        import sys
+
+        sys.path.insert(0, os.path.join(
+            os.path.dirname(__file__), "..", "packages", "unpy-mcp", "src"
+        ))
+        import unpy_mcp.server as srv
+
+        result = srv._eval_formula_value(object(), {}, "f1", {"f1": {"type": "formula"}})
+        assert result is None
+
+
+class TestIssue8CodeWhitespace:
+    def test_codeblock_title_bypasses_markdown(self):
+        """CodeBlock.title must store text verbatim (markdown=False) —
+        the markdown converter strips leading whitespace (issue #8)."""
+        sys.path.insert(0, os.path.join(
+            os.path.dirname(__file__), "..", "packages", "unpy-core", "src"
+        ))
+        from unpy.block import CodeBlock
+
+        # functional check: fset on a fake block stores [[text]] segments
+        # verbatim (no markdown conversion — that would strip indentation)
+        captured = {}
+
+        class FakeClient:
+            def submit_transaction(self, ops):
+                captured["ops"] = ops
+        b = CodeBlock.__new__(CodeBlock)
+        b._client = FakeClient()
+        b._id = "T"
+        b._data = {"id": "T", "properties": {}}
+        b.title = "def f():\n    return 1"
+        ops = captured["ops"]
+        op = (ops[0] if isinstance(ops, list) else ops)
+        assert op["args"] == [["def f():\n    return 1"]]
+
+
+class TestIssue9DatabaseIds:
+    def test_get_database_reports_own_ids(self):
+        """get_database output includes block id + data source id (issue #9)."""
+        import sys
+
+        sys.path.insert(0, os.path.join(
+            os.path.dirname(__file__), "..", "packages", "unpy-mcp", "src"
+        ))
+        from unittest.mock import MagicMock, patch
+
+        import unpy_mcp.server as srv
+
+        coll = MagicMock()
+        coll.name = "Docs"
+        coll.get_schema_properties.return_value = [
+            {"id": "title", "slug": "title", "name": "Name", "type": "title"},
+        ]
+        coll.get.return_value = {"title": {"name": "Name", "type": "title"}}
+        coll.id = "coll-abc"
+        blk = MagicMock()
+        blk.id = "block-xyz"
+        blk.collection = coll
+        client = MagicMock()
+        client.get_block.return_value = blk
+        with patch.object(srv, "_get_client", return_value=client):
+            out = srv.get_database("block-xyz", sample_rows=0)
+        assert "block id: block-xyz" in out
+        assert "data source id: coll-abc" in out
+
+
+class TestIssue11ColumnOps:
+    def test_find_column_by_name_and_id(self):
+        import sys
+
+        sys.path.insert(0, os.path.join(
+            os.path.dirname(__file__), "..", "packages", "unpy-mcp", "src"
+        ))
+        from unpy_mcp.server import _find_column
+
+        schema = {"ab12": {"name": "Status", "type": "select"},
+                  "cd34": {"name": "Gone", "type": "text", "alive": False},
+                  "dead": None}  # tombstoned
+        assert _find_column(schema, "Status")[0] == "ab12"
+        assert _find_column(schema, "ab12")[0] == "ab12"
+        assert _find_column(schema, "missing") == (None, None)
+        assert _find_column(schema, "Gone")[0] is None  # tombstoned skipped

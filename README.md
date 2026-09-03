@@ -7,7 +7,7 @@
 Unofficial Python 3.12+ client for Notion's internal API (v3). Three packages
 in one repo:
 
-- **unpy-mcp** — MCP server (25 tools) for Claude Desktop, Cursor, VS Code, Codex, Claude Code
+- **unpy-mcp** — MCP server (27 tools) for Claude Desktop, Cursor, VS Code, Codex, Claude Code
 - **unpy-cli** — command-line tool (25 commands, same capabilities)
 - **unpy-core** — Python library you can build on directly
 
@@ -161,7 +161,7 @@ explicitly opt in. See [ADR-0005](docs/adr/0005-read-write-scope-gated.md).
 
 ## What your AI can do
 
-All **25 tools** (8 read + 17 write):
+All **27 tools** (8 read + 19 write):
 
 | Read — always available | |
 |---|---|
@@ -436,7 +436,7 @@ unpy-mcp/
 │   │   ├── auth.py                ← token + space resolution
 │   │   └── operations.py          ← transaction op builder
 │   ├── unpy-cli/src/unpy_cli/     ← CLI (Typer, 25 commands)
-│   └── unpy-mcp/src/unpy_mcp/     ← MCP server (25 tools, stdio + HTTP)
+│   └── unpy-mcp/src/unpy_mcp/     ← MCP server (27 tools, stdio + HTTP)
 ├── tests/                         ← 126 tests (pytest + vcr.py)
 ├── docs/adr/                      ← 8 Architecture Decision Records
 ├── CONTEXT.md                     ← Domain glossary
