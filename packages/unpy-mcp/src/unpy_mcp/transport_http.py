@@ -7,6 +7,12 @@ Two modes:
 
 Per-request Notion token: clients can send `X-Notion-Token` header to use
 their own Notion session token. Falls back to NOTION_TOKEN_V2 env var.
+
+The Streamable HTTP app runs in stateless mode so each request re-resolves
+its own token. In stateful mode the SDK froze the token captured on the
+`initialize` request for the whole session, so a later `X-Notion-Token` was
+ignored and a client that omitted it on the first request silently acted as
+the server's own NOTION_TOKEN_V2 identity (a confused-deputy).
 """
 
 from __future__ import annotations
@@ -124,7 +130,14 @@ def run_http(server: MCPServer, host: str = "127.0.0.1", port: int = 8000) -> No
     # `host` must be passed through: without it the SDK assumes 127.0.0.1 and
     # enables DNS-rebinding protection that only accepts localhost Host
     # headers, so a 0.0.0.0 bind answered 421 to every real hostname.
-    app = server.streamable_http_app(host=host, transport_security=_transport_security())
+    # `stateless_http=True` re-runs the server per request in the request's
+    # context, so the X-Notion-Token set by the middleware binds per request
+    # instead of being frozen at session initialize.
+    app = server.streamable_http_app(
+        host=host,
+        transport_security=_transport_security(),
+        stateless_http=True,
+    )
 
     # Wrap with NotionTokenMiddleware so X-Notion-Token is extracted per-request
     wrapped_app = NotionTokenMiddleware(app)

@@ -9,10 +9,13 @@ their own Notion session. Falls back to NOTION_TOKEN_V2 env var.
 
 from __future__ import annotations
 
+import collections
 import contextvars
+import hashlib
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Annotated
 
 # Ensure unpy-core is importable when running from source without install
@@ -34,8 +37,36 @@ notion_token_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "notion_token", default=None
 )
 
-# Cache of NotionClient per token (avoids re-calling loadUserContent on every request)
-_client_cache: dict[str, NotionClient] = {}
+# Cache of NotionClient keyed by a hash of the token (avoids re-calling
+# loadUserContent on every request). Bounded and keyed by digest so a caller
+# firing many distinct tokens cannot grow it without limit or leave raw
+# tokens sitting in a process-wide dict.
+_CLIENT_CACHE_MAX = 32
+_client_cache: "collections.OrderedDict[str, NotionClient]" = collections.OrderedDict()
+
+
+def _client_cache_key(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _resolve_local_path(file_path: str) -> str:
+    """Resolve a local path and confine it to NOTION_MCP_FILE_ROOT.
+
+    The file-reading write tools (import_csv, create_media) would otherwise
+    open any path the server process can read and push its contents into
+    Notion — an exfiltration path for a remote Bearer holder over HTTP, or
+    for prompt injection over stdio. Every local path must resolve inside the
+    allowed root. Root is NOTION_MCP_FILE_ROOT when set, else the current
+    working directory; set NOTION_MCP_FILE_ROOT=/ to lift the restriction.
+    """
+    root = Path(os.environ.get("NOTION_MCP_FILE_ROOT") or os.getcwd()).expanduser().resolve()
+    resolved = Path(file_path).expanduser().resolve()
+    if not resolved.is_relative_to(root):
+        raise PermissionError(
+            f"Refusing to read '{file_path}': outside allowed file root '{root}'. "
+            "Set NOTION_MCP_FILE_ROOT to another directory (or '/' to allow all)."
+        )
+    return str(resolved)
 
 
 def _get_client() -> NotionClient:
@@ -53,14 +84,17 @@ def _get_client() -> NotionClient:
     if token is None:
         cfg = resolve_auth()
         token = cfg["token"]
+    key = _client_cache_key(token)
     # Cache client per token to avoid re-init on every request
-    if token in _client_cache:
-        return _client_cache[token]
+    cached = _client_cache.get(key)
+    if cached is not None:
+        _client_cache.move_to_end(key)
+        return cached
     try:
         client = NotionClient(token_v2=token)
     except Exception as exc:
         # Invalidate cache entry if it was cached before but is now failing
-        _client_cache.pop(token, None)
+        _client_cache.pop(key, None)
         msg = str(exc)
         if "401" in msg or "Unauthorized" in msg:
             raise RuntimeError(
@@ -77,7 +111,10 @@ def _get_client() -> NotionClient:
             client.current_space = client.get_space(space_id)
         except Exception:
             pass
-    _client_cache[token] = client
+    _client_cache[key] = client
+    _client_cache.move_to_end(key)
+    while len(_client_cache) > _CLIENT_CACHE_MAX:
+        _client_cache.popitem(last=False)
     return client
 
 
@@ -729,6 +766,13 @@ def _fetch_image(client, url: str):
 def _block_to_markdown(block) -> str:
     """Convert a single block to markdown text."""
     btype = block.get("type", "") or ""
+    # Plaintext title of the block, used by most text branches below (and by
+    # the factory / link_to_page markers). Computed up front so those early
+    # branches don't reference it before assignment.
+    try:
+        md = block.title_plaintext
+    except Exception:
+        md = ""
     # Image — emit marker with filename and get_image hint
     if btype == "image":
         # Extract filename from properties for readability
@@ -791,10 +835,6 @@ def _block_to_markdown(block) -> str:
             return f"[inline database] {db_name} — use get_database(\"{block.id}\")"
         # No collection found — might be a simple table misidentified, or empty DB
         return f"[collection_view] (no collection) — block id: {block.id}"
-    try:
-        md = block.title_plaintext
-    except Exception:
-        md = ""
     if btype == "header":
         return f"# {md}"
     if btype == "sub_header":
@@ -2359,6 +2399,10 @@ if _WRITE_ENABLED:
 
         block = parent.children.add_new(cls)
         if file_path:
+            try:
+                file_path = _resolve_local_path(file_path)
+            except PermissionError as e:
+                return str(e)
             block.upload_file(file_path)
         elif url:
             block.source = url
@@ -2501,6 +2545,10 @@ if _WRITE_ENABLED:
         parent = client.get_block(parent_id)
         if parent is None:
             return f"Parent not found: {parent_id}"
+        try:
+            file_path = _resolve_local_path(file_path)
+        except PermissionError as e:
+            return str(e)
         try:
             db_id = _import_csv_impl(client, parent, file_path, title)
         except FileNotFoundError as e:

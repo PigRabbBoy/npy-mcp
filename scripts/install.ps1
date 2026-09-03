@@ -27,7 +27,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$RepoUrl = "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/unpy-mcp"
+$RepoUrl = "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.1#subdirectory=packages/unpy-mcp"
 $ServerArgs = @("--refresh", "--from", $RepoUrl, "unpy-mcp")
 
 function Say($msg)  { Write-Host "==> $msg" -ForegroundColor Cyan }
@@ -180,7 +180,21 @@ function Get-ClientPath($clientId, $scope) {
 
 function Backup-File($path) {
   if (Test-Path $path) {
+    # These backups hold the token — keep only the most recent.
+    Get-ChildItem "$path.bak-*" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
     Copy-Item $path "$path.bak-$(Get-Date -Format yyyyMMddHHmmss)"
+  }
+}
+
+function Ensure-Gitignored($path) {
+  # Keep a project-scoped, token-bearing config out of version control.
+  if (-not (Test-Path .git)) { return }
+  $gi = ".gitignore"
+  $existing = @()
+  if (Test-Path $gi) { $existing = Get-Content $gi }
+  if ($existing -notcontains $path) {
+    Add-Content -Path $gi -Value $path
+    Say "Added '$path' to .gitignore (it contains your Notion token)"
   }
 }
 
@@ -304,6 +318,10 @@ function Install-Into($client, $scope) {
     default    { Merge-JsonClient $client $path }
   }
   Write-Host "  [$status] $client -> $path (scope: $scopeUsed)"
+  if ($scopeUsed -eq "project") {
+    Warn "Project config '$path' contains your Notion token — do not commit it."
+    Ensure-Gitignored $path
+  }
   return $path
 }
 

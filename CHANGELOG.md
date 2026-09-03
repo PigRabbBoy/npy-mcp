@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Security
+- **File-reading write tools are confined to a directory** (`unpy-mcp`).
+  `import_csv` and `create_media` would open any path the server process
+  could read and push it into Notion — an exfiltration path for a remote
+  Bearer holder over HTTP, or for prompt injection over stdio. They now
+  refuse paths outside `NOTION_MCP_FILE_ROOT` (default: the working
+  directory; set `/` to allow any path). The CLI is unaffected.
+- **HTTP transport binds the Notion token per request** (`unpy-mcp`). The
+  Streamable HTTP app now runs stateless, so each request re-resolves its
+  own `X-Notion-Token`. Previously the SDK froze the token from the
+  `initialize` request for the whole session, so a later `X-Notion-Token`
+  was ignored and a client that omitted it on the first request silently
+  used the server's own `NOTION_TOKEN_V2` identity.
+- **Bounded the per-token client cache** and keyed it by token digest
+  instead of the raw token, so a caller sending many distinct tokens can no
+  longer grow it without limit or leave raw tokens in a process-wide dict.
+- **Installer hardening** (`scripts/install.*`): configs holding the token
+  are written mode `0600`, only the most recent `.bak` is kept (also
+  `0600`), and a project-scoped config is added to `.gitignore` with a
+  warning so the token is not committed. The `uvx --from git+…` reference
+  is pinned to a release tag instead of tracking `master`.
+- `uv.lock` is now committed so Docker builds and installs resolve a
+  reproducible dependency set.
 - **Removed a live `file_token` cookie and device identifiers from the vcr
   cassettes.** Response `Set-Cookie` headers were never filtered
   (`filter_headers` only covers request headers), so `client_init.yaml`
@@ -26,6 +48,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   http(s) sources are rejected.
 - Real space/page IDs used as examples in `README*.md` and `TOOLS.md`
   replaced with placeholder IDs.
+- **Sanitized vcr test recordings** (`tests/fixtures/recordings/`): the
+  cassettes were captured from a live session with the token already
+  replaced (`FAKE_TOKEN_FOR_TESTS_ONLY`), but still carried personal
+  data — real name, personal email, Google avatar URL, user/space/page
+  UUIDs, and private page titles. All replaced with stable fake values
+  (`Test User`, `test-user@example.com`, `11111111-…`-style IDs, "Sample
+  Project Workspace"). Recordings stay committed (tests replay them
+  offline); `tests/fixtures/recordings/README.md` documents the
+  sanitization policy for future re-records.
 
 ### Fixed
 - **HTTP transport on a non-loopback bind answered 421 to every real
@@ -37,16 +68,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   e.g. `mcp.example.com:*`) turns it on for public hostnames.
 - `docker-compose.yml` still pointed at the pre-rename
   `packages/npy-mcp/Dockerfile`.
-
-- **Sanitized vcr test recordings** (`tests/fixtures/recordings/`): the
-  cassettes were captured from a live session with the token already
-  replaced (`FAKE_TOKEN_FOR_TESTS_ONLY`), but still carried personal
-  data — real name, personal email, Google avatar URL, user/space/page
-  UUIDs, and private page titles. All replaced with stable fake values
-  (`Test User`, `test-user@example.com`, `11111111-…`-style IDs, "Sample
-  Project Workspace"). 126 tests still pass. Recordings stay committed
-  (tests replay them offline); `tests/fixtures/recordings/README.md`
-  documents the sanitization policy for future re-records.
 
 ## [1.0.0] - 2026-09-03
 

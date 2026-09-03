@@ -88,7 +88,7 @@ curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/u
   "mcpServers": {
     "unpy-mcp": {
       "command": "uvx",
-      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/unpy-mcp", "unpy-mcp"],
+      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.1#subdirectory=packages/unpy-mcp", "unpy-mcp"],
       "env": {
         "NOTION_TOKEN_V2": "v03%3AeyJ..."
       }
@@ -104,7 +104,7 @@ curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/u
     "unpy-mcp": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/unpy-mcp", "unpy-mcp"],
+      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.1#subdirectory=packages/unpy-mcp", "unpy-mcp"],
       "env": { "NOTION_TOKEN_V2": "v03%3AeyJ..." }
     }
   }
@@ -115,7 +115,7 @@ curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/u
 ```toml
 [mcp_servers.unpy-mcp]
 command = "uvx"
-args = ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/unpy-mcp", "unpy-mcp"]
+args = ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.1#subdirectory=packages/unpy-mcp", "unpy-mcp"]
 env = { NOTION_TOKEN_V2 = "v03%3AeyJ..." }
 ```
 
@@ -134,7 +134,7 @@ env = { NOTION_TOKEN_V2 = "v03%3AeyJ..." }
 
 **pip install**（Python 開発者向け）：
 ```bash
-pip install "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/unpy-mcp"
+pip install "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.1#subdirectory=packages/unpy-mcp"
 ```
 設定には `"command": "python"`、`"args": ["-m", "unpy_mcp"]` を使用してください。
 </details>
@@ -311,6 +311,11 @@ NOTION_TOKEN_V2="your-token" \
 NOTION_MCP_AUTH_TOKEN="shared-secret" \
 python -m unpy_mcp --transport http --host 0.0.0.0 --port 8000
 ```
+
+Bearer トークンは平文で送られるため、TLS（リバースプロキシ）の背後で運用してください。
+実際のホスト名に対して DNS リバインディング保護を有効にするには
+`NOTION_MCP_ALLOWED_HOSTS="mcp.example.com:*"` を設定します（ループバックへの
+バインドは自動的に保護されます）。
 
 AI クライアントから接続：
 

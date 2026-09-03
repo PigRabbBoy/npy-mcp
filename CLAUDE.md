@@ -61,6 +61,8 @@ NOTION_MCP_AUTH_TOKEN=secret python -m unpy_mcp --transport http --port 8000
 - `NOTION_MCP_ALLOWED_HOSTS` — comma-separated Host allowlist (e.g. `mcp.example.com:*`)
   that keeps DNS-rebinding protection on for non-loopback HTTP binds; loopback binds
   are protected automatically
+- `NOTION_MCP_FILE_ROOT` — directory the file-reading write tools (`import_csv`,
+  `create_media`) may open; default is the working directory, `/` disables the limit
 - `NOTION_CONFIG_DIR` — config directory (default `~/.config/unpy-mcp`)
 - `NOTIONPY_LOG_LEVEL` — logging level: debug, info, warning, error, disabled
 

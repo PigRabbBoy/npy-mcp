@@ -88,7 +88,7 @@ curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/u
   "mcpServers": {
     "unpy-mcp": {
       "command": "uvx",
-      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/unpy-mcp", "unpy-mcp"],
+      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.1#subdirectory=packages/unpy-mcp", "unpy-mcp"],
       "env": {
         "NOTION_TOKEN_V2": "v03%3AeyJ..."
       }
@@ -104,7 +104,7 @@ curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/u
     "unpy-mcp": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/unpy-mcp", "unpy-mcp"],
+      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.1#subdirectory=packages/unpy-mcp", "unpy-mcp"],
       "env": { "NOTION_TOKEN_V2": "v03%3AeyJ..." }
     }
   }
@@ -115,7 +115,7 @@ curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/u
 ```toml
 [mcp_servers.unpy-mcp]
 command = "uvx"
-args = ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/unpy-mcp", "unpy-mcp"]
+args = ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.1#subdirectory=packages/unpy-mcp", "unpy-mcp"]
 env = { NOTION_TOKEN_V2 = "v03%3AeyJ..." }
 ```
 
@@ -134,7 +134,7 @@ env = { NOTION_TOKEN_V2 = "v03%3AeyJ..." }
 
 **pip install** (สำหรับคนเขียน Python):
 ```bash
-pip install "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/unpy-mcp"
+pip install "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.1#subdirectory=packages/unpy-mcp"
 ```
 แล้วใช้ `"command": "python"`, `"args": ["-m", "unpy_mcp"]` ใน config
 </details>
@@ -311,6 +311,10 @@ NOTION_TOKEN_V2="your-token" \
 NOTION_MCP_AUTH_TOKEN="shared-secret" \
 python -m unpy_mcp --transport http --host 0.0.0.0 --port 8000
 ```
+
+วางไว้หลัง TLS (reverse proxy) เพราะ Bearer token ส่งแบบไม่เข้ารหัส. ถ้าจะเปิด
+DNS rebinding protection สำหรับ hostname จริง ตั้ง
+`NOTION_MCP_ALLOWED_HOSTS="mcp.example.com:*"` (bind แบบ loopback ถูกป้องกันให้อยู่แล้ว).
 
 ชี้ AI client มาที่ server:
 

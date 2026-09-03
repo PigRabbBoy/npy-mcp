@@ -19,7 +19,7 @@
 
 set -euo pipefail
 
-REPO_URL="git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/unpy-mcp"
+REPO_URL="git+https://github.com/PigRabbBoy/npy-mcp@v1.0.1#subdirectory=packages/unpy-mcp"
 SERVER_ARGS=(--refresh --from "$REPO_URL" unpy-mcp)
 
 # ---------------------------------------------------------------- utilities
@@ -244,9 +244,23 @@ client_paths() {
 backup_file() {
   local f="$1"
   if [[ -f "$f" ]]; then
-    cp "$f" "$f.bak-$(date +%Y%m%d%H%M%S)"
+    # These backups hold the token — keep only the most recent, mode 0600.
+    rm -f "$f".bak-* 2>/dev/null || true
+    local b="$f.bak-$(date +%Y%m%d%H%M%S)"
+    cp "$f" "$b"
+    chmod 600 "$b" 2>/dev/null || true
   fi
   return 0
+}
+
+ensure_gitignored() {
+  # Keep a project-scoped, token-bearing config out of version control.
+  local path="$1"
+  [[ -d .git ]] || return 0
+  if ! grep -qxF "$path" .gitignore 2>/dev/null; then
+    printf '%s\n' "$path" >> .gitignore
+    say "Added '$path' to .gitignore (it contains your Notion token)"
+  fi
 }
 
 merge_json_client() {
@@ -267,7 +281,7 @@ except Exception:
     cfg = {}
 entry = {
     "command": uvx,
-    "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/unpy-mcp", "unpy-mcp"],
+    "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.1#subdirectory=packages/unpy-mcp", "unpy-mcp"],
     "env": {"NOTION_TOKEN_V2": token},
 }
 if allow == "1":
@@ -309,7 +323,7 @@ if space:
     env["NOTION_SPACE_ID"] = space
 entry = {
     "command": uvx,
-    "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/unpy-mcp", "unpy-mcp"],
+    "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.1#subdirectory=packages/unpy-mcp", "unpy-mcp"],
     "env": env,
 }
 mcp["unpy-mcp"] = entry
@@ -357,7 +371,7 @@ if space:
     env["NOTION_SPACE_ID"] = space
 entry = {
     "type": "local",
-    "command": [uvx, "--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/unpy-mcp", "unpy-mcp"],
+    "command": [uvx, "--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.1#subdirectory=packages/unpy-mcp", "unpy-mcp"],
     "environment": env,
     "enabled": True,
 }
@@ -385,7 +399,13 @@ install_into() {
     opencode) status="$(merge_opencode_client "$path")" ;;
     *)        status="$(merge_json_client "$client" "$path")" ;;
   esac
+  # The written config embeds NOTION_TOKEN_V2 — restrict to the current user.
+  chmod 600 "$path" 2>/dev/null || true
   echo "  [$status] $client → $path (scope: $scope_used)"
+  if [[ "$scope_used" == "project" ]]; then
+    warn "Project config '$path' contains your Notion token — do not commit it."
+    ensure_gitignored "$path"
+  fi
 }
 
 # ---------------------------------------------------------------- run
