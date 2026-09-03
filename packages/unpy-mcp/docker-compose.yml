@@ -1,4 +1,4 @@
-# Docker Compose for npy-mcp — Notion MCP server over HTTP
+# Docker Compose for unpy-mcp — Notion MCP server over HTTP
 #
 # Usage:
 #   docker compose up -d
@@ -16,7 +16,7 @@ services:
   unpy-mcp:
     build:
       context: ../..
-      dockerfile: packages/npy-mcp/Dockerfile
+      dockerfile: packages/unpy-mcp/Dockerfile
     image: unpy-mcp:latest
     ports:
       - "8000:8000"

@@ -43,18 +43,6 @@ interactions:
       - W/"a8-Farmu7CT605iW9koolj1x++IWvU"
       Server:
       - cloudflare
-      Set-Cookie:
-      - notion_browser_id=45b10d51-38cb-4711-8cca-2b76132366eb; Domain=.notion.com;
-        Path=/; Expires=Thu, 19 Aug 2027 08:24:49 GMT; Secure
-      - device_id=3c1d872b-594c-81a6-ac74-003b514f5ab9; Domain=app.notion.com; Path=/;
-        Expires=Thu, 19 Aug 2027 08:24:49 GMT; HttpOnly; Secure
-      - notion_check_cookie_consent=false; Domain=.notion.com; Path=/; Expires=Thu,
-        20 Aug 2026 08:24:49 GMT; Secure
-      - __cf_bm=HTXvZJqjGRfIU9uBUDy9suYv0.KtwG0_iHjp5EDk.kQ-1787127889.105259-1.0.1.1-dFZy.bWkYUUTryMcq7hvg03JXqsTp1J.pgp6S8wxw2hXUf64t0_YSxTPgrdpw6MjRRhLxC5RR393m5vwIC32F4cJ3W2u7sgbQj1szqny6zh0kRu4R6kk1pVeKuasXPii;
-        HttpOnly; SameSite=None; Secure; Path=/; Domain=notion.com; Expires=Wed, 19
-        Aug 2026 08:54:49 GMT
-      - _cfuvid=i.TXocqAjiHdMY6QphkIlg8vqZTXgm7QYegFTqRf9u8-1787127889.105259-1.0.1.1-._FPzYNPVUWezWl35Kyu0iBbn3gewfJkdgSImEYMY9Y;
-        HttpOnly; SameSite=None; Secure; Path=/; Domain=notion.com
       Strict-Transport-Security:
       - max-age=31536000; includeSubDomains; preload
       Vary:

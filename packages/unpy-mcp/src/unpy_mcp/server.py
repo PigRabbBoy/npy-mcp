@@ -692,6 +692,40 @@ def _build_image_url(block) -> str:
     return f"https://app.notion.com/image/{quote(source, safe='')}?{params}"
 
 
+_NOTION_HOST_SUFFIXES = (".notion.com", ".notion.so", ".notion-static.com")
+
+
+def _is_notion_host(url: str) -> bool:
+    """True if the URL points at a Notion-operated host (may receive the session cookie)."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme not in ("http", "https") or not host:
+        return False
+    return host in ("notion.com", "notion.so") or host.endswith(_NOTION_HOST_SUFFIXES)
+
+
+def _fetch_image(client, url: str):
+    """Download an image URL without ever handing the Notion session to a third party.
+
+    Notion-hosted URLs (image proxy, signed files) need the token_v2 cookie and
+    go through the client session. Any other http(s) source — an image block
+    whose source is an external URL — is fetched with a plain, cookie-less
+    request, so someone who can place an image block in a page you read cannot
+    collect your session token. Non-http(s) schemes are rejected.
+    """
+    from urllib.parse import urlparse
+
+    import requests
+
+    if urlparse(url).scheme not in ("http", "https"):
+        raise ValueError(f"Unsupported image URL scheme: {url}")
+    if _is_notion_host(url):
+        return client.session.get(url, allow_redirects=True, timeout=30)
+    return requests.get(url, allow_redirects=True, timeout=30)
+
+
 def _block_to_markdown(block) -> str:
     """Convert a single block to markdown text."""
     btype = block.get("type", "") or ""
@@ -1043,7 +1077,7 @@ def get_image(block_id: str):
     if not url:
         return f"Image block {block_id} has no source URL"
     try:
-        r = client.session.get(url, allow_redirects=True, timeout=30)
+        r = _fetch_image(client, url)
         r.raise_for_status()
     except Exception as exc:
         return f"Failed to download image: {exc}"

@@ -43,18 +43,6 @@ interactions:
       - W/"1764-+Ugh95XysDSSnZlMKTwcWW94h7o"
       Server:
       - cloudflare
-      Set-Cookie:
-      - notion_browser_id=67d0d06b-2d44-4b38-aa98-a105eac675ba; Domain=.notion.com;
-        Path=/; Expires=Thu, 19 Aug 2027 08:24:48 GMT; Secure
-      - device_id=3c1d872b-594c-81be-b209-003b5863e8c1; Domain=app.notion.com; Path=/;
-        Expires=Thu, 19 Aug 2027 08:24:48 GMT; HttpOnly; Secure
-      - notion_check_cookie_consent=false; Domain=.notion.com; Path=/; Expires=Thu,
-        20 Aug 2026 08:24:48 GMT; Secure
-      - __cf_bm=.V.H4XlZIGUfSLyYqE88j3QbuRDFscif2rBjlSGy668-1787127888.6340675-1.0.1.1-KbmpjtdCuDIDMjQRK4TJgOEfufDrDIXCfzIMn3WNqQkGeSuVLauQ3cntuaHjgXaxaSqiv5QJWZyQNoQCgiFkoq5RAAUeAnd74QL5gSn.WQiHh1yIdky4pQ9AuvekPirK;
-        HttpOnly; SameSite=None; Secure; Path=/; Domain=notion.com; Expires=Wed, 19
-        Aug 2026 08:54:49 GMT
-      - _cfuvid=v9wmsB6XEAvmSsUqxjk_lncMOs2oyUw29AdhO_8s1M4-1787127888.6340675-1.0.1.1-Ru8iXhul0zX2cRehoNY0HZ_xabCHgCaMoJgYNv1hdtw;
-        HttpOnly; SameSite=None; Secure; Path=/; Domain=notion.com
       Strict-Transport-Security:
       - max-age=31536000; includeSubDomains; preload
       Transfer-Encoding:

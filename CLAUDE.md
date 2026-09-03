@@ -58,6 +58,9 @@ NOTION_MCP_AUTH_TOKEN=secret python -m unpy_mcp --transport http --port 8000
 - `NOTION_SPACE_ID` — space to bind as current space
 - `NOTION_ALLOW_WRITE` — set to `1` to enable write commands/tools
 - `NOTION_MCP_AUTH_TOKEN` — Bearer token for MCP HTTP transport
+- `NOTION_MCP_ALLOWED_HOSTS` — comma-separated Host allowlist (e.g. `mcp.example.com:*`)
+  that keeps DNS-rebinding protection on for non-loopback HTTP binds; loopback binds
+  are protected automatically
 - `NOTION_CONFIG_DIR` — config directory (default `~/.config/unpy-mcp`)
 - `NOTIONPY_LOG_LEVEL` — logging level: debug, info, warning, error, disabled
 

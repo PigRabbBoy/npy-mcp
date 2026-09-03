@@ -16,11 +16,27 @@ FAKE_TOKEN = "test-token-not-real"
 
 rec_dir = os.path.join(os.path.dirname(__file__), "fixtures", "recordings")
 
+
+def _scrub_response(response):
+    """Drop response Set-Cookie headers before a cassette is written.
+
+    vcr's ``filter_headers`` only covers *request* headers. Notion responses
+    set session cookies (``file_token``, ``device_id``, ``notion_browser_id``)
+    that must never land in a committed cassette.
+    """
+    headers = response.get("headers") or {}
+    for key in list(headers):
+        if key.lower() == "set-cookie":
+            del headers[key]
+    return response
+
+
 my_vcr = vcr.VCR(
     record_mode="none",  # never record, only replay
     cassette_library_dir=rec_dir,
     serializer="yaml",
     filter_headers=["cookie", "authorization"],
+    before_record_response=_scrub_response,
     match_on=["method", "scheme", "host", "path"],
 )
 
@@ -78,6 +94,49 @@ class TestSearch:
             results = unpy_client_fixture.search_blocks("Benz", limit=5)
         # search recording should return at least one result
         assert isinstance(results, list)
+
+
+class TestSessionCookieScope:
+    """token_v2 must only ever be sent to Notion hosts."""
+
+    @staticmethod
+    def _cookie_for(client, url):
+        from requests import Request
+
+        return client.session.prepare_request(Request("GET", url)).headers.get("Cookie")
+
+    def test_cookie_sent_to_notion_hosts(self, unpy_client_fixture):
+        assert "token_v2=" in self._cookie_for(unpy_client_fixture, "https://app.notion.com/api/v3/x")
+        assert "token_v2=" in self._cookie_for(unpy_client_fixture, "https://www.notion.so/api/v3/getTasks")
+
+    def test_cookie_not_sent_elsewhere(self, unpy_client_fixture):
+        # Regression: a domain-less cookie was attached to every host the
+        # session fetched (external image sources, S3 presigned URLs, ...).
+        for url in (
+            "https://evil.example.com/img.png",
+            "https://s3.us-west-2.amazonaws.com/secure.notion-static.com/f.png",
+            "http://169.254.169.254/latest/meta-data/",
+            "http://app.notion.com/plain-http",  # secure cookie, https only
+        ):
+            assert self._cookie_for(unpy_client_fixture, url) is None, url
+
+
+def test_scrub_response_drops_set_cookie_only():
+    # record_mode="none" never invokes the hook, so exercise it directly.
+    response = {"headers": {"Set-Cookie": ["file_token=x"], "set-cookie": ["a=b"], "X-Other": ["y"]}}
+    assert _scrub_response(response)["headers"] == {"X-Other": ["y"]}
+    assert _scrub_response({"headers": None}) == {"headers": None}
+
+
+def test_cassettes_contain_no_set_cookie():
+    """Response Set-Cookie headers carry session cookies; never commit them."""
+    import glob
+
+    for path in glob.glob(os.path.join(rec_dir, "*.yaml")):
+        with open(path, encoding="utf-8") as f:
+            text = f.read().lower()
+        assert "set-cookie" not in text, path
+        assert "file_token=" not in text, path
 
 
 class TestStoreRecordmap:

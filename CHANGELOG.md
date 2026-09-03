@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Security
+- **Removed a live `file_token` cookie and device identifiers from the vcr
+  cassettes.** Response `Set-Cookie` headers were never filtered
+  (`filter_headers` only covers request headers), so `client_init.yaml`
+  carried a real Notion `file_token` plus `device_id` /
+  `notion_browser_id`. All response `Set-Cookie` headers are stripped from
+  the cassettes, and a `before_record_response` hook keeps them out of
+  future re-records. The leaked token must be invalidated separately
+  (Notion → Settings → Log out of all devices).
+- **`token_v2` cookie is scoped to Notion hosts** (`unpy-core`). The
+  session cookie was created without a domain, so `requests` attached it to
+  every URL the session fetched — external image sources, S3 presigned
+  URLs, redirect targets. It is now set only for `.notion.com` and
+  `.notion.so`.
+- **`get_image` never sends the session to third parties.** An image block
+  whose source is an external URL is downloaded with a plain cookie-less
+  request; only Notion hosts go through the authenticated session. Non
+  http(s) sources are rejected.
+- Real space/page IDs used as examples in `README*.md` and `TOOLS.md`
+  replaced with placeholder IDs.
+
+### Fixed
+- **HTTP transport on a non-loopback bind answered 421 to every real
+  hostname** (`--host 0.0.0.0`, the Docker default). The SDK's
+  DNS-rebinding protection was configured for localhost only because
+  `streamable_http_app()` was called without `host=`. The bind host is now
+  passed through: loopback binds keep the automatic localhost-only
+  protection, and the new `NOTION_MCP_ALLOWED_HOSTS` env var (comma-separated,
+  e.g. `mcp.example.com:*`) turns it on for public hostnames.
+- `docker-compose.yml` still pointed at the pre-rename
+  `packages/npy-mcp/Dockerfile`.
+
 - **Sanitized vcr test recordings** (`tests/fixtures/recordings/`): the
   cassettes were captured from a live session with the token already
   replaced (`FAKE_TOKEN_FOR_TESTS_ONLY`), but still carried personal

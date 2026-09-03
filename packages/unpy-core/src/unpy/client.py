@@ -4,7 +4,7 @@ import re
 import uuid
 
 from requests import Session, HTTPError
-from requests.cookies import cookiejar_from_dict
+from requests.cookies import create_cookie
 from urllib.parse import urljoin
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
@@ -120,7 +120,16 @@ class NotionClient(object):
     ):
         self.session = create_session(client_specified_retry)
         if token_v2:
-            self.session.cookies = cookiejar_from_dict({"token_v2": token_v2})
+            # Scope the session cookie to Notion hosts only. A cookie created
+            # without a domain (cookiejar_from_dict) is attached to EVERY
+            # request the session makes — external image sources, S3
+            # presigned URLs, redirects — which leaks the session token.
+            for domain in (".notion.com", ".notion.so"):
+                self.session.cookies.set_cookie(
+                    create_cookie(
+                        "token_v2", token_v2, domain=domain, path="/", secure=True
+                    )
+                )
         else:
             self._set_token(email=email, password=password)
 

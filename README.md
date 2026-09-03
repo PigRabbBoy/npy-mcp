@@ -297,7 +297,7 @@ Resolution order: `NOTION_SPACE_ID` env → `~/.config/unpy-mcp/config.toml` →
 `api/v3/loadUserContent` → in the response, the key under `"space": {...}` is
 your space ID.
 
-Space IDs look like UUIDs: `1b6d9f59-d372-43b7-8cfc-332e473b1f2c`
+Space IDs look like UUIDs: `22222222-2222-4222-8222-222222222222`
 </details>
 
 ---
@@ -311,6 +311,11 @@ NOTION_TOKEN_V2="your-token" \
 NOTION_MCP_AUTH_TOKEN="shared-secret" \
 python -m unpy_mcp --transport http --host 0.0.0.0 --port 8000
 ```
+
+Put it behind TLS (a reverse proxy) — the Bearer token travels in clear
+text otherwise. To keep DNS-rebinding protection on for a public hostname,
+add `NOTION_MCP_ALLOWED_HOSTS="mcp.example.com:*"` (loopback binds are
+protected automatically).
 
 Point your AI client at it:
 

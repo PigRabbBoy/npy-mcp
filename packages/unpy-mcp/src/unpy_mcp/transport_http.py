@@ -20,8 +20,33 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from mcp.server import MCPServer
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
+from mcp.server.transport_security import TransportSecuritySettings
 
 from .server import notion_token_var
+
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+
+def _transport_security() -> TransportSecuritySettings | None:
+    """DNS-rebinding protection for the Streamable HTTP app.
+
+    Returns None unless NOTION_MCP_ALLOWED_HOSTS is set, so the SDK default
+    applies: loopback binds get automatic protection with localhost-only
+    allowed hosts; other binds are open (they rely on Bearer auth). When the
+    server is reachable under a real hostname, set NOTION_MCP_ALLOWED_HOSTS
+    to a comma-separated list such as ``mcp.example.com:*,10.0.0.5:*`` to
+    keep the protection on for that bind.
+    """
+    raw = os.environ.get("NOTION_MCP_ALLOWED_HOSTS", "")
+    allowed = [h.strip() for h in raw.split(",") if h.strip()]
+    if not allowed:
+        return None
+    origins = [f"{scheme}://{h}" for h in allowed for scheme in ("http", "https")]
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=allowed,
+        allowed_origins=origins,
+    )
 
 
 class NotionTokenMiddleware:
@@ -81,7 +106,7 @@ def run_http(server: MCPServer, host: str = "127.0.0.1", port: int = 8000) -> No
     if not auth_token:
         # Open access + a non-loopback bind would expose full Notion read/write
         # to the network. Refuse unless explicitly overridden.
-        loopback = host in ("127.0.0.1", "localhost", "::1")
+        loopback = host in LOOPBACK_HOSTS
         allow_open = os.environ.get("NOTION_MCP_ALLOW_OPEN") == "1"
         if not loopback and not allow_open:
             raise SystemExit(
@@ -95,8 +120,11 @@ def run_http(server: MCPServer, host: str = "127.0.0.1", port: int = 8000) -> No
     if auth_token:
         server = _build_authenticated_server(server, host, port)
 
-    # Build the Starlette app and inject our NotionTokenMiddleware
-    app = server.streamable_http_app()
+    # Build the Starlette app and inject our NotionTokenMiddleware.
+    # `host` must be passed through: without it the SDK assumes 127.0.0.1 and
+    # enables DNS-rebinding protection that only accepts localhost Host
+    # headers, so a 0.0.0.0 bind answered 421 to every real hostname.
+    app = server.streamable_http_app(host=host, transport_security=_transport_security())
 
     # Wrap with NotionTokenMiddleware so X-Notion-Token is extracted per-request
     wrapped_app = NotionTokenMiddleware(app)

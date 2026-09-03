@@ -297,7 +297,7 @@ uv run unpy auth use-space <SPACE_ID>
 `api/v3/loadUserContent` を探す → レスポンス内の `"space": {...}` の下のキーが
 スペース ID です。
 
-スペース ID は UUID 形式：`1b6d9f59-d372-43b7-8cfc-332e473b1f2c`
+スペース ID は UUID 形式：`22222222-2222-4222-8222-222222222222`
 </details>
 
 ---

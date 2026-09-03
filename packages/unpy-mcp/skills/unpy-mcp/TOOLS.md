@@ -31,7 +31,7 @@ Fetch a Notion page and its children tree as markdown.
 
 **Example call:**
 ```json
-{"page_id": "670bd233-7435-4dac-9f60-ba9cdb5a10e4", "depth": 2}
+{"page_id": "44444444-4444-4444-8444-444444444444", "depth": 2}
 ```
 
 **Returns:** Markdown rendering of the page and its children (indented by level).
@@ -48,7 +48,7 @@ Fetch a single Notion block as markdown.
 
 **Example call:**
 ```json
-{"block_id": "670bd233-7435-4dac-9f60-ba9cdb5a10e4"}
+{"block_id": "44444444-4444-4444-8444-444444444444"}
 ```
 
 **Returns:** Markdown rendering of the block.

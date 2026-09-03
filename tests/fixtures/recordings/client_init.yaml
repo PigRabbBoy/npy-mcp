@@ -42,37 +42,6 @@ interactions:
       - W/"735d-734IpX7sepjqmyYi8gK0bWfTHhY"
       Server:
       - cloudflare
-      Set-Cookie:
-      - notion_browser_id=17d81401-ca35-46d0-b35f-d557d3a4b0e9; Domain=.notion.com;
-        Path=/; Expires=Thu, 19 Aug 2027 08:25:47 GMT; Secure
-      - device_id=3c1d872b-594c-81a6-b45e-003b188a99bb; Domain=app.notion.com; Path=/;
-        Expires=Thu, 19 Aug 2027 08:25:47 GMT; HttpOnly; Secure
-      - notion_check_cookie_consent=false; Domain=.notion.com; Path=/; Expires=Thu,
-        20 Aug 2026 08:25:47 GMT; Secure
-      - file_token=v02%3Afile_token%3APl6tiNYLgTAFONAb8p8ISpB5VcgJ6ZPK6jibhTgVYmIvoW7FkSMN632U-s-dI1_V42tMD-rRjhf65FL68EoQ0E3_18hMVFbaKmnRr_w9p2OBbygBtSafUWrXsCXHk4bs6olGf0a-jfcP0Q_UwTj-3lIlEN40;
-        Domain=.notion.com; Path=/f; Expires=Thu, 19 Aug 2027 08:25:47 GMT; HttpOnly;
-        Secure
-      - token_v2=v03%3AFAKE_TOKEN_FOR_TESTS_ONLY;
-        Domain=app.notion.com; Path=/; Expires=Thu, 19 Aug 2027 08:25:47 GMT; HttpOnly;
-        Secure
-      - notion_user_id=11111111-1111-4111-8111-111111111111; Domain=app.notion.com;
-        Path=/; Expires=Thu, 19 Aug 2027 08:25:47 GMT; Secure
-      - notion_sync_user_id=%7B%22notion_user_id%22%3A%2211111111-1111-4111-8111-111111111111%22%2C%22is_logged_in%22%3Atrue%2C%22version%22%3A4%7D;
-        Domain=.notion.com; Path=/; Expires=Tue, 17 Nov 2026 08:25:47 GMT; Secure
-      - notion_locale=en-US%2Flegacy; Domain=app.notion.com; Path=/; Expires=Thu,
-        19 Aug 2027 08:25:47 GMT; Secure
-      - NEXT_LOCALE=en-US; Domain=app.notion.com; Path=/; Expires=Thu, 19 Aug 2027
-        08:25:47 GMT; Secure
-      - notion_users=%5B%2211111111-1111-4111-8111-111111111111%22%2C%22db35fcb9-b616-4a92-9003-9639f164de4d%22%5D;
-        Domain=app.notion.com; Path=/; Expires=Thu, 19 Aug 2027 08:25:47 GMT; Secure
-      - p_sync_session=%7B%22tokenId%22%3A%22v02%3Async_session%3AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAiUQK5N7wIAQa1FkhLORzebu9h-MytbYGKknbSPCj2F07ufgzyXMdLM8Ncq-uLdTfiHhhhmytmsbckJti2osZQyze1pXrgegtPwVt%22%2C%22userIds%22%3A%5B%2211111111-1111-4111-8111-111111111111%22%2C%22db35fcb9-b616-4a92-9003-9639f164de4d%22%5D%7D;
-        Domain=.notion.com; Path=/; Expires=Thu, 19 Aug 2027 08:25:47 GMT; HttpOnly;
-        Secure; SameSite=Lax
-      - __cf_bm=1brwAIvxWESFfbMAH3blBToZ64alWu8eJVJGQLhlCOk-1787127947.7476244-1.0.1.1-aeIibewuNghEIWZA9V6PjiTF62WTMwcf6hH4oOaSFfVGo43OWO.xgN2drfVKfd00IBzYPicLq5IAWNP7JfgNHp37zIBrfCnXxCzMsWYLiHB8yYZkFqq5bIf_eOJAOqj1;
-        HttpOnly; SameSite=None; Secure; Path=/; Domain=notion.com; Expires=Wed, 19
-        Aug 2026 08:55:48 GMT
-      - _cfuvid=2D0dYiykJDMf83QP5pZ02w6rYPIeamaXAWhFQAAWT94-1787127947.7476244-1.0.1.1-XEZ.w_rJNvw5jsS2QKd2DJk07AGG9a.ksiMLizQefMQ;
-        HttpOnly; SameSite=None; Secure; Path=/; Domain=notion.com
       Strict-Transport-Security:
       - max-age=31536000; includeSubDomains; preload
       Transfer-Encoding:
@@ -144,18 +113,6 @@ interactions:
       - W/"411-4Z/p4pBwGOyDIGLyzzIJSGu0zAc"
       Server:
       - cloudflare
-      Set-Cookie:
-      - notion_browser_id=1e8a97a7-74c1-4860-b2ad-83ceed04622a; Domain=.notion.com;
-        Path=/; Expires=Thu, 19 Aug 2027 08:25:48 GMT; Secure
-      - device_id=3c1d872b-594c-812d-bb7e-003be864d5f7; Domain=app.notion.com; Path=/;
-        Expires=Thu, 19 Aug 2027 08:25:48 GMT; HttpOnly; Secure
-      - notion_check_cookie_consent=false; Domain=.notion.com; Path=/; Expires=Thu,
-        20 Aug 2026 08:25:48 GMT; Secure
-      - __cf_bm=Z3qtLGgoNzqh_eNzH9bExoVk7k0rVSRoELjWLS8eExk-1787127948.1043065-1.0.1.1-Q01Mo.YqJ7YtRo.YhYN8RCp0gabHTnKrDOTCE8viSeLTBdX27y9ddwbgHliVpjs9Ugtf_D4eOtSq44M47jaSIvp9tbUi6ASJUB2GlooTSCoU5k6ns2bxt6n41j48GMx8;
-        HttpOnly; SameSite=None; Secure; Path=/; Domain=notion.com; Expires=Wed, 19
-        Aug 2026 08:55:48 GMT
-      - _cfuvid=CuCqueJCU9bfNoNzwxxLU03nIZTiqw1QXZUGNLayB6E-1787127948.1043065-1.0.1.1-KxYa6qK_ZBV68PPdLvgW3uTq85UyWntW_6gZk_GrvM8;
-        HttpOnly; SameSite=None; Secure; Path=/; Domain=notion.com
       Strict-Transport-Security:
       - max-age=31536000; includeSubDomains; preload
       Transfer-Encoding:

@@ -297,7 +297,7 @@ uv run unpy auth use-space <SPACE_ID>
 `api/v3/loadUserContent` → ใน response, key ใต้ `"space": {...}` คือ
 space ID ของคุณ
 
-space ID หน้าตาเป็น UUID: `1b6d9f59-d372-43b7-8cfc-332e473b1f2c`
+space ID หน้าตาเป็น UUID: `22222222-2222-4222-8222-222222222222`
 </details>
 
 ---

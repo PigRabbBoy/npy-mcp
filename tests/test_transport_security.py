@@ -57,7 +57,10 @@ def test_bind_guard_allows_loopback_and_override(monkeypatch):
     monkeypatch.delenv("NOTION_MCP_AUTH_TOKEN", raising=False)
 
     class FakeServer:
-        def streamable_http_app(self):
+        app_kwargs = None
+
+        def streamable_http_app(self, **kwargs):
+            FakeServer.app_kwargs = kwargs
             return object()
 
     called = {}
@@ -72,3 +75,42 @@ def test_bind_guard_allows_loopback_and_override(monkeypatch):
     monkeypatch.setenv("NOTION_MCP_ALLOW_OPEN", "1")
     th.run_http(server=FakeServer(), host="0.0.0.0", port=8000)
     assert called["host"] == "0.0.0.0"
+
+
+def test_bind_host_is_passed_to_streamable_app(monkeypatch):
+    # Regression: without host=, the SDK assumed 127.0.0.1 and enabled
+    # DNS-rebinding protection that rejected every non-localhost Host header
+    # (HTTP 421) on a 0.0.0.0 bind.
+    import unpy_mcp.transport_http as th
+
+    monkeypatch.delenv("NOTION_MCP_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("NOTION_MCP_ALLOWED_HOSTS", raising=False)
+    monkeypatch.setenv("NOTION_MCP_ALLOW_OPEN", "1")
+
+    class FakeServer:
+        app_kwargs = None
+
+        def streamable_http_app(self, **kwargs):
+            FakeServer.app_kwargs = kwargs
+            return object()
+
+    monkeypatch.setattr("uvicorn.run", lambda app, host, port: None)
+    th.run_http(server=FakeServer(), host="0.0.0.0", port=8000)
+    assert FakeServer.app_kwargs["host"] == "0.0.0.0"
+    # No allowlist configured → SDK default (loopback auto-protects, others open)
+    assert FakeServer.app_kwargs["transport_security"] is None
+
+
+def test_allowed_hosts_env_enables_rebinding_protection(monkeypatch):
+    import unpy_mcp.transport_http as th
+
+    monkeypatch.delenv("NOTION_MCP_ALLOWED_HOSTS", raising=False)
+    assert th._transport_security() is None
+
+    monkeypatch.setenv("NOTION_MCP_ALLOWED_HOSTS", "mcp.example.com:*, 10.0.0.5:8000 ,")
+    settings = th._transport_security()
+    assert settings is not None
+    assert settings.enable_dns_rebinding_protection is True
+    assert settings.allowed_hosts == ["mcp.example.com:*", "10.0.0.5:8000"]
+    assert "https://mcp.example.com:*" in settings.allowed_origins
+    assert "http://10.0.0.5:8000" in settings.allowed_origins
