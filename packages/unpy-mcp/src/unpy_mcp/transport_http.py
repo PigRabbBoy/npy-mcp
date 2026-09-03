@@ -110,12 +110,12 @@ def _build_authenticated_server(base_server: MCPServer, host: str, port: int) ->
     """Build a fresh MCPServer with Bearer auth, copying all tools from base_server."""
     resource_url = AnyHttpUrl(f"http://{host}:{port}/mcp")
     auth = AuthSettings(
-        issuer_url=AnyHttpUrl("https://notion-py.local"),
+        issuer_url=AnyHttpUrl("https://unpy-mcp.local"),
         resource_server_url=resource_url,
         required_scopes=["notion:read"],
     )
     new_mcp = MCPServer(
-        "notion-py",
+        "unpy-mcp",
         token_verifier=BearerTokenVerifier(),
         auth=auth,
     )

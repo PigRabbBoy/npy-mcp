@@ -16,9 +16,9 @@ def mcp_server(monkeypatch):
     monkeypatch.setenv("NOTION_TOKEN", "test-token-not-real")
     monkeypatch.delenv("NOTION_ALLOW_WRITE", raising=False)
     import importlib
-    import notion_mcp.server
-    importlib.reload(notion_mcp.server)
-    return notion_mcp.server.mcp
+    import unpy_mcp.server
+    importlib.reload(unpy_mcp.server)
+    return unpy_mcp.server.mcp
 
 
 class TestToolRegistration:
@@ -52,9 +52,9 @@ class TestWriteGate:
         monkeypatch.setenv("NOTION_TOKEN_V2", "test-token")
         monkeypatch.setenv("NOTION_ALLOW_WRITE", "1")
         import importlib
-        import notion_mcp.server
-        importlib.reload(notion_mcp.server)
-        mcp = notion_mcp.server.mcp
+        import unpy_mcp.server
+        importlib.reload(unpy_mcp.server)
+        mcp = unpy_mcp.server.mcp
         async with Client(mcp) as client:
             result = await client.list_tools()
             tool_names = [t.name for t in result.tools]
@@ -94,7 +94,7 @@ class TestToolSchemas:
 class TestBlockTypes:
     def test_block_types_registered(self):
         """Verify all expected block type classes are registered."""
-        from notion.block import BLOCK_TYPES
+        from unpy.block import BLOCK_TYPES
         expected = [
             "text", "to_do", "header", "sub_header", "sub_sub_header",
             "sub_sub_sub_header", "bulleted_list", "numbered_list", "toggle",

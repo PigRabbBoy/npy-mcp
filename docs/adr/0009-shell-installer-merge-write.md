@@ -23,7 +23,7 @@ missing; and writes correct configs everywhere.
   `scripts/install.ps1` covers Windows. A third dispatch script would
   only add a hop.
 - The installer **merges** into existing config files: it loads the file,
-  adds or updates only the `notion-py` entry, and writes back — never
+  adds or updates only the `unpy-mcp` entry, and writes back — never
   dropping other servers. Before every write it copies the original to a
   timestamped `<file>.bak-<timestamp>`.
 - `uvx` is resolved to an **absolute path** at install time, because GUI
@@ -42,7 +42,7 @@ missing; and writes correct configs everywhere.
   consistent with [ADR-0005](0005-read-write-scope-gated.md).
 - `NOTION_SPACE_ID` is optional; empty means "first space found", which
   matches the library's own resolution order.
-- Paired uninstallers remove only the `notion-py` entry, same
+- Paired uninstallers remove only the `unpy-mcp` entry, same
   merge-with-backup discipline.
 
 ## Consequences
@@ -54,5 +54,5 @@ missing; and writes correct configs everywhere.
   adding a client means editing both scripts. Acceptable at this scale;
   a shared manifest would be over-engineering.
 - Windows editing of `config.toml` is line-based (strip-and-append of the
-  `[mcp_servers.notion-py]` block) because PowerShell has no built-in
+  `[mcp_servers.unpy-mcp]` block) because PowerShell has no built-in
   TOML parser; acceptable because we only ever manage our own block.

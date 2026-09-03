@@ -23,9 +23,9 @@ Always update ALL of these to the same version:
 | File | Field |
 |---|---|
 | `pyproject.toml` | `version = "X.Y.Z"` |
-| `packages/npy-core/pyproject.toml` | `version = "X.Y.Z"` |
-| `packages/npy-cli/pyproject.toml` | `version = "X.Y.Z"` |
-| `packages/npy-mcp/pyproject.toml` | `version = "X.Y.Z"` |
+| `packages/unpy-core/pyproject.toml` | `version = "X.Y.Z"` |
+| `packages/unpy-cli/pyproject.toml` | `version = "X.Y.Z"` |
+| `packages/unpy-mcp/pyproject.toml` | `version = "X.Y.Z"` |
 
 ## CHANGELOG.md format
 
@@ -34,7 +34,7 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
 ```markdown
 # Changelog
 
-All notable changes to npy-mcp are documented here.
+All notable changes to unpy-mcp are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
@@ -136,7 +136,7 @@ gh release view vX.Y.Z -R PigRabbBoy/npy-mcp
 ### Build + tag + push
 
 ```bash
-cd packages/npy-mcp
+cd packages/unpy-mcp
 
 # Build with version + latest tags
 docker build -t pigrabbboy/npy-mcp:X.Y.Z -t pigrabbboy/npy-mcp:latest .
@@ -206,5 +206,5 @@ git add -A && git commit -m "release: vX.Y.Z" && git tag vX.Y.Z && git push orig
 # 4. GitHub Release
 gh release create vX.Y.Z --generate-notes -R PigRabbBoy/npy-mcp
 # 5. Docker (optional)
-cd packages/npy-mcp && docker build -t pigrabbboy/npy-mcp:X.Y.Z -t pigrabbboy/npy-mcp:latest . && docker push pigrabbboy/npy-mcp:X.Y.Z && docker push pigrabbboy/npy-mcp:latest
+cd packages/unpy-mcp && docker build -t pigrabbboy/npy-mcp:X.Y.Z -t pigrabbboy/npy-mcp:latest . && docker push pigrabbboy/npy-mcp:X.Y.Z && docker push pigrabbboy/npy-mcp:latest
 ```

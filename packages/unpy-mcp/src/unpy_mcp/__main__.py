@@ -1,9 +1,9 @@
 """npy-mcp entry point — auto-detect transport from --transport flag.
 
 Usage:
-    notion-mcp                      # stdio (default, for local Claude Desktop)
-    notion-mcp --transport stdio    # explicit stdio
-    notion-mcp --transport http --host 0.0.0.0 --port 8000  # remote HTTP
+    unpy-mcp                      # stdio (default, for local Claude Desktop)
+    unpy-mcp --transport stdio    # explicit stdio
+    unpy-mcp --transport http --host 0.0.0.0 --port 8000  # remote HTTP
 
 Auth (HTTP only):
     Set NOTION_MCP_AUTH_TOKEN env var to require Bearer token auth.
@@ -18,7 +18,7 @@ import sys
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="notion-mcp")
+    parser = argparse.ArgumentParser(prog="unpy-mcp")
     parser.add_argument(
         "--transport",
         choices=["stdio", "http"],

@@ -2,7 +2,7 @@
 
 import pytest
 
-from notion.markdown import (
+from unpy.markdown import (
     markdown_to_notion,
     notion_to_markdown,
     notion_to_plaintext,

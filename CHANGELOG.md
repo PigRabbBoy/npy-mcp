@@ -1,10 +1,41 @@
 # Changelog
 
-All notable changes to npy-mcp are documented here.
+All notable changes to unpy-mcp are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-09-03
+
+### BREAKING — project renamed: notion-py → **unpy-mcp**
+
+**unpy** = **un**official Notion **p**ython.
+
+- **Python imports**: `notion` → `unpy`, `notion_cli` → `unpy_cli`,
+  `notion_mcp` → `unpy_mcp`. Code that did `from notion.client import
+  NotionClient` must change to `from unpy.client import NotionClient`.
+- **Packages**: `npy-core`/`npy-cli`/`npy-mcp` → `unpy-core`/`unpy-cli`/
+  `unpy-mcp` (uv workspace + install names).
+- **Entry points**: `notion` CLI command → `unpy`; `notion-mcp` MCP
+  command → `unpy-mcp` (`python -m unpy_mcp`).
+- **Config directory**: `~/.config/notion-py` → `~/.config/unpy-mcp`.
+  A one-time automatic migration copies `config.toml` + `token` from the
+  legacy directory on first run (legacy dir left in place).
+- **MCP server registration name** (the key inside AI-client configs):
+  `notion-py` → `unpy-mcp`. Re-running the installer updates existing
+  configs; manual setups must rename the key.
+- **Env vars unchanged**: `NOTION_TOKEN_V2`, `NOTION_SPACE_ID`,
+  `NOTION_ALLOW_WRITE`, `NOTION_MCP_AUTH_TOKEN`, `NOTION_CONFIG_DIR`,
+  `NOTION_TOKEN` — all keep their names.
+- GitHub repo (`PigRabbBoy/npy-mcp`) and Docker Hub (`pigrabbboy/npy-mcp`)
+  keep their names; installer raw-URLs are unchanged.
+- Dockerfile ENTRYPOINT → `unpy-mcp`; docker-compose service/image renamed.
+- Internal data dir default `~/.notion-py` → `~/.unpy-mcp` (rarely used;
+  override with `NOTION_DATA_DIR`).
+
+### Fixed
+- `python -m unpy_cli` module path in docs; `argparse` prog name.
 
 ### Added
 - **One-command installer** ([ADR-0009](docs/adr/0009-shell-installer-merge-write.md)):
@@ -18,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Flag mode for scripting: `--client`, `--token`, `--space`,
     `--allow-write`, `--scope global|project`.
 - Paired uninstallers: `scripts/uninstall.sh` / `scripts/uninstall.ps1` —
-  remove only the `notion-py` entry from chosen clients.
+  remove only the `unpy-mcp` entry from chosen clients.
 
 ## [0.11.0] - 2026-09-02
 
@@ -29,7 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was ever created — relations were silently one-way and rollups naming the
   missing reverse failed. Notion's own client builds two-way relations by
   writing a property on *both* collections in one transaction (captured live
-  via `CollectionSettingsSetupRelation.handleAddRelation`); npy-mcp now
+  via `CollectionSettingsSetupRelation.handleAddRelation`); unpy-mcp now
   replicates that exactly: forward + reverse properties with symmetric
   `"property"` back-references, `version: v2`, `autoRelate` disabled.
 - Schema writes now use Notion's current `updateCollectionPropertySchema`
@@ -121,7 +152,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Icon prefix stripped from page titles in `_block_summary`
 - `query_database` docstring corrected: "Markdown listing" not "Markdown table"
 - Invalid/expired token no longer crashes MCP server — returns helpful error message instead
-- All `uvx`/`pip` commands now use `#subdirectory=packages/npy-mcp` (build was failing without it)
+- All `uvx`/`pip` commands now use `#subdirectory=packages/unpy-mcp` (build was failing without it)
 - `--refresh` flag added to all uvx configs so MCP server auto-updates from git on restart
 
 ### Added
@@ -138,7 +169,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - "AI Skill" section in README with install instructions for opencode / Claude Desktop / Cursor
 
 ### Changed
-- README title from `notion-py v2` to `npy-mcp — Notion MCP Server + CLI`
+- README title from `unpy-mcp v2` to `npy-mcp — Notion MCP Server + CLI`
 - Repo URL updated to `PigRabbBoy/npy-mcp`
 - Added 3 stdio setup methods (uvx, Docker, pip) for Claude Desktop/Cursor/VS Code
 
@@ -164,7 +195,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2021-01-28
 
 ### Added
-- Initial release of notion-py by jamalex
+- Initial release of unpy-mcp by jamalex
 - Cookie-based Notion client (unofficial)
 - Block, Collection, User, Space models
 - Markdown export support

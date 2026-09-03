@@ -1,20 +1,20 @@
 [project]
-name = "npy-cli"
-version = "0.11.0"
-description = "CLI for Notion (cookie-based, powered by npy-core)"
+name = "unpy-cli"
+version = "1.0.0"
+description = "CLI for Notion (cookie-based, powered by unpy-core)"
 requires-python = ">=3.12"
 dependencies = [
-    "npy-core",
+    "unpy-core",
     "typer>=0.12",
     "rich>=13",
 ]
 
 [project.scripts]
-notion = "notion_cli.cli:app"
+unpy = "unpy_cli.cli:app"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/notion_cli"]
+packages = ["src/unpy_cli"]

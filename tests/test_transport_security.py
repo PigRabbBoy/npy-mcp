@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from notion_mcp.transport_http import BearerTokenVerifier
+from unpy_mcp.transport_http import BearerTokenVerifier
 
 
 @pytest.fixture(autouse=True)
@@ -32,7 +32,7 @@ def test_prefix_of_token_rejected():
 def test_unset_env_means_open_access_verifier():
     # verifier itself stays permissive when env unset (documented local mode);
     # the bind guard in run_http is what prevents network exposure.
-    import notion_mcp.transport_http as th
+    import unpy_mcp.transport_http as th
 
     os.environ.pop("NOTION_MCP_AUTH_TOKEN", None)
     try:
@@ -43,7 +43,7 @@ def test_unset_env_means_open_access_verifier():
 
 
 def test_bind_guard_refuses_public_open(monkeypatch):
-    import notion_mcp.transport_http as th
+    import unpy_mcp.transport_http as th
 
     monkeypatch.delenv("NOTION_MCP_AUTH_TOKEN", raising=False)
     monkeypatch.setenv("NOTION_TOKEN_V2", "dummy")
@@ -52,7 +52,7 @@ def test_bind_guard_refuses_public_open(monkeypatch):
 
 
 def test_bind_guard_allows_loopback_and_override(monkeypatch):
-    import notion_mcp.transport_http as th
+    import unpy_mcp.transport_http as th
 
     monkeypatch.delenv("NOTION_MCP_AUTH_TOKEN", raising=False)
 

@@ -1,8 +1,9 @@
-# notion-py v2
+# unpy-mcp
 
 A cookie-based client for Notion's internal API (v3), exposing read and write
-operations through a CLI and an MCP server (stdio + HTTP). Built on the
-archived notion-py codebase, modernised for Python 3.12+.
+operations through a CLI and an MCP server (stdio + HTTP). **unpy** =
+**un**official Notion **p**ython. Built on the archived notion-py codebase,
+modernised for Python 3.12+ and renamed from notion-py (v0.x) to unpy-mcp.
 
 ## Language
 
@@ -106,7 +107,7 @@ _Avoid_: app, editor, host
 
 **Merge Write**:
 The Installer's way of editing a client config: load the existing file,
-change only the `notion-py` entry, save — never touching other entries —
+change only the `unpy-mcp` entry, save — never touching other entries —
 after copying the original to a timestamped `.bak-*` backup. Re-running the
 Installer updates the existing entry in place.
 _Avoid_: overwrite, replace, reset

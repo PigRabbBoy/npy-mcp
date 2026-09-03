@@ -19,8 +19,8 @@
 
 set -euo pipefail
 
-REPO_URL="git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/npy-mcp"
-SERVER_ARGS=(--refresh --from "$REPO_URL" notion-mcp)
+REPO_URL="git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/unpy-mcp"
+SERVER_ARGS=(--refresh --from "$REPO_URL" unpy-mcp)
 
 # ---------------------------------------------------------------- utilities
 say()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
@@ -240,7 +240,7 @@ backup_file() {
 }
 
 merge_json_client() {
-  # $1=client $2=config path — merges notion-py entry into a JSON config
+  # $1=client $2=config path — merges unpy-mcp entry into a JSON config
   local client="$1" file="$2"
   local key="mcpServers"
   [[ "$client" == "vscode" ]] && key="servers"
@@ -257,7 +257,7 @@ except Exception:
     cfg = {}
 entry = {
     "command": uvx,
-    "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/npy-mcp", "notion-mcp"],
+    "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/unpy-mcp", "unpy-mcp"],
     "env": {"NOTION_TOKEN_V2": token},
 }
 if allow == "1":
@@ -267,8 +267,8 @@ if space:
 if key == "servers":
     entry["type"] = "stdio"
 servers = cfg.setdefault(key, {})
-existed = "notion-py" in servers
-servers["notion-py"] = entry
+existed = "unpy-mcp" in servers
+servers["unpy-mcp"] = entry
 with open(path, "w") as f:
     json.dump(cfg, f, indent=2)
     f.write("\n")
@@ -291,7 +291,7 @@ try:
 except Exception:
     cfg = {}
 mcp = cfg.setdefault("mcp_servers", {})
-existed = "notion-py" in mcp
+existed = "unpy-mcp" in mcp
 env = {"NOTION_TOKEN_V2": token}
 if allow == "1":
     env["NOTION_ALLOW_WRITE"] = "1"
@@ -299,10 +299,10 @@ if space:
     env["NOTION_SPACE_ID"] = space
 entry = {
     "command": uvx,
-    "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/npy-mcp", "notion-mcp"],
+    "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/unpy-mcp", "unpy-mcp"],
     "env": env,
 }
-mcp["notion-py"] = entry
+mcp["unpy-mcp"] = entry
 
 def toml_str(s):
     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
@@ -319,7 +319,7 @@ def emit_table(name, table):
             lines.append(f"{k} = {toml_str(v)}")
     lines.append("")
 
-emit_table("mcp_servers.notion-py", entry)
+emit_table("mcp_servers.unpy-mcp", entry)
 with open(path, "a") as f:
     f.write("\n" + "\n".join(lines))
 print("UPDATED" if existed else "CREATED")
@@ -347,13 +347,13 @@ if space:
     env["NOTION_SPACE_ID"] = space
 entry = {
     "type": "local",
-    "command": [uvx, "--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/npy-mcp", "notion-mcp"],
+    "command": [uvx, "--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/unpy-mcp", "unpy-mcp"],
     "environment": env,
     "enabled": True,
 }
 mcp = cfg.setdefault("mcp", {})
-existed = "notion-py" in mcp
-mcp["notion-py"] = entry
+existed = "unpy-mcp" in mcp
+mcp["unpy-mcp"] = entry
 with open(path, "w") as f:
     json.dump(cfg, f, indent=2)
     f.write("\n")

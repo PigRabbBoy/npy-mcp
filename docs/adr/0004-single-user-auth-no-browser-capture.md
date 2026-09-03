@@ -1,7 +1,7 @@
 # Single-user auth, env/config only, no browser capture
 
 The Token is read from `NOTION_TOKEN_V2` env var, then
-`~/.config/notion-py/token` config file. No browser automation to capture
+`~/.config/unpy-mcp/token` config file. No browser automation to capture
 cookies. Rejected alternative: launching Playwright to log the user in and
 extract `token_v2` automatically. Browser capture is convenient on a local
 dev machine but useless for remote MCP HTTP deployment, adds a ~400MB

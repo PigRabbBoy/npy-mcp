@@ -198,7 +198,7 @@ def create_page(
 ) -> None:
     """Create a new page under a parent block."""
     _check_write_enabled()
-    from notion.block import PageBlock
+    from unpy.block import PageBlock
     client = get_client(token_arg=token)
     parent = client.get_block(parent_id)
     if parent is None:
@@ -218,7 +218,7 @@ def append_blocks(
 ) -> None:
     """Append blocks to a page. Supports: text, todo, header, subheader, callout, bulleted_list, numbered_list, quote, code, divider."""
     _check_write_enabled()
-    from notion.block import (
+    from unpy.block import (
         TextBlock, TodoBlock, HeaderBlock, SubheaderBlock, CalloutBlock,
         BulletedListBlock, NumberedListBlock, QuoteBlock, CodeBlock, DividerBlock,
     )
@@ -406,7 +406,7 @@ def whoami(
     token: str = typer.Option(None, "--token", "-t"),
 ) -> None:
     """Show current token (masked) and space."""
-    from notion.auth import resolve_auth
+    from unpy.auth import resolve_auth
     try:
         cfg = resolve_auth(token_arg=token)
     except Exception as e:
@@ -423,7 +423,7 @@ def use_space(
     space_id: str = typer.Argument(..., help="Space ID to set as current"),
 ) -> None:
     """Set the current space (persisted to config file)."""
-    from notion.auth import save_space
+    from unpy.auth import save_space
     save_space(space_id)
     typer.echo(f"Saved space_id={space_id} to config.")
 
@@ -434,7 +434,7 @@ def spaces(
 ) -> None:
     """List all spaces the token has access to."""
     client = get_client(token_arg=token)
-    from notion.auth import resolve_auth
+    from unpy.auth import resolve_auth
     cfg = resolve_auth(token_arg=token)
     store = client._store
     space_ids = list(store._values.get("space", {}).keys())
@@ -467,7 +467,7 @@ def get_image(
     if block is None:
         typer.echo(f"Block not found: {block_id}", err=True)
         raise typer.Exit(1)
-    from notion.block import ImageBlock, FileBlock, PDFBlock, VideoBlock, AudioBlock
+    from unpy.block import ImageBlock, FileBlock, PDFBlock, VideoBlock, AudioBlock
 
     if not isinstance(block, (ImageBlock, FileBlock, PDFBlock, VideoBlock, AudioBlock)):
         typer.echo(f"Block is not a media block: {type(block).__name__}", err=True)
@@ -504,9 +504,9 @@ def create_database(
     if parent is None:
         typer.echo(f"Parent not found: {parent_id}", err=True)
         raise typer.Exit(1)
-    from notion.block import CollectionViewBlock, CollectionViewPageBlock
+    from unpy.block import CollectionViewBlock, CollectionViewPageBlock
 
-    from notion_mcp.server import _build_collection_schema
+    from unpy_mcp.server import _build_collection_schema
 
     if columns:
         col_specs = json.loads(columns)
@@ -553,7 +553,7 @@ def add_column(
     if collection is None:
         typer.echo(f"Database not found: {database_id}", err=True)
         raise typer.Exit(1)
-    from notion_mcp.server import _build_relation_prop, _build_rollup_prop, _fev
+    from unpy_mcp.server import _build_relation_prop, _build_rollup_prop, _fev
 
     import uuid as _uuid
 
@@ -619,7 +619,7 @@ def create_media(
     if parent is None:
         typer.echo(f"Parent not found: {parent_id}", err=True)
         raise typer.Exit(1)
-    from notion.block import ImageBlock, VideoBlock, AudioBlock, FileBlock, PDFBlock
+    from unpy.block import ImageBlock, VideoBlock, AudioBlock, FileBlock, PDFBlock
 
     TYPE_MAP = {"image": ImageBlock, "video": VideoBlock, "audio": AudioBlock, "file": FileBlock, "pdf": PDFBlock}
     cls = TYPE_MAP.get(type)
@@ -655,7 +655,7 @@ def create_embed(
     if parent is None:
         typer.echo(f"Parent not found: {parent_id}", err=True)
         raise typer.Exit(1)
-    from notion_mcp.server import _embed_type_map
+    from unpy_mcp.server import _embed_type_map
 
     TYPE_MAP = _embed_type_map()
     cls = TYPE_MAP.get(type)
@@ -711,7 +711,7 @@ def create_columns(
     if parent is None:
         typer.echo(f"Parent not found: {parent_id}", err=True)
         raise typer.Exit(1)
-    from notion.block import ColumnListBlock, ColumnBlock
+    from unpy.block import ColumnListBlock, ColumnBlock
 
     cl = parent.children.add_new(ColumnListBlock)
     for _ in range(max(1, count)):
@@ -733,7 +733,7 @@ def import_csv(
     if parent is None:
         typer.echo(f"Parent not found: {parent_id}", err=True)
         raise typer.Exit(1)
-    from notion_mcp.server import _import_csv_impl
+    from unpy_mcp.server import _import_csv_impl
 
     try:
         db_id = _import_csv_impl(client, parent, file, title)

@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from notion import Block, CollectionRowBlock, NotionClient, notion_to_markdown
-from notion.render import render_property
+from unpy import Block, CollectionRowBlock, NotionClient, notion_to_markdown
+from unpy.render import render_property
 
 
 def _safe_props(row) -> dict:

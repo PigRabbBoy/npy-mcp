@@ -1,5 +1,5 @@
 ---
-name: notion-mcp
+name: unpy-mcp
 description: >-
   Interact with Notion via MCP tools — search, read, create, update, delete
   pages, blocks, and database rows. Use when the user asks to read or write

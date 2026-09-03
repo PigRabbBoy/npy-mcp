@@ -27,8 +27,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$RepoUrl = "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/npy-mcp"
-$ServerArgs = @("--refresh", "--from", $RepoUrl, "notion-mcp")
+$RepoUrl = "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/unpy-mcp"
+$ServerArgs = @("--refresh", "--from", $RepoUrl, "unpy-mcp")
 
 function Say($msg)  { Write-Host "==> $msg" -ForegroundColor Cyan }
 function Warn($msg) { Write-Host " !! $msg" -ForegroundColor Yellow }
@@ -205,15 +205,15 @@ function Merge-JsonClient($client, $file) {
 
   $entry = @{
     command = $UvxPath
-    args    = @("--refresh", "--from", $RepoUrl, "notion-mcp")
+    args    = @("--refresh", "--from", $RepoUrl, "unpy-mcp")
     env     = New-EnvTable
   }
   if ($key -eq "servers") { $entry.type = "stdio" }
 
   $servers = @{}
   if ($cfg.ContainsKey($key) -and $cfg[$key]) { $servers = $cfg[$key] }
-  $existed = $servers.ContainsKey("notion-py")
-  $servers["notion-py"] = $entry
+  $existed = $servers.ContainsKey("unpy-mcp")
+  $servers["unpy-mcp"] = $entry
   $cfg[$key] = $servers
 
   Backup-File $file
@@ -236,25 +236,25 @@ function Merge-TomlClient($file) {
 
   $block = @"
 
-[mcp_servers.notion-py]
+[mcp_servers.unpy-mcp]
 command = "$UvxPath"
 args = [$argsLines]
 
-[mcp_servers.notion-py.env]
+[mcp_servers.unpy-mcp.env]
 $envLines
 "@
 
   $existed = $false
   if (Test-Path $file) {
     $content = Get-Content $file -Raw
-    if ($content -match '\[mcp_servers\.notion-py\]') {
+    if ($content -match '\[mcp_servers\.unpy-mcp\]') {
       $existed = $true
-      # strip previous notion-py blocks (they are ours; new block wins)
+      # strip previous unpy-mcp blocks (they are ours; new block wins)
       $lines = $content -split "`r?`n"
       $out = @()
       $skip = $false
       foreach ($line in $lines) {
-        if ($line -match '^\[mcp_servers\.notion-py\]') { $skip = $true; continue }
+        if ($line -match '^\[mcp_servers\.unpy-mcp\]') { $skip = $true; continue }
         if ($skip -and $line -match '^\[') { $skip = $false }
         if (-not $skip) { $out += $line }
       }
@@ -283,8 +283,8 @@ function Merge-OpenCodeClient($file) {
   }
   $mcp = @{}
   if ($cfg.ContainsKey("mcp") -and $cfg["mcp"]) { $mcp = $cfg["mcp"] }
-  $existed = $mcp.ContainsKey("notion-py")
-  $mcp["notion-py"] = $entry
+  $existed = $mcp.ContainsKey("unpy-mcp")
+  $mcp["unpy-mcp"] = $entry
   $cfg["mcp"] = $mcp
 
   Backup-File $file

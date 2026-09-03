@@ -4,22 +4,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Unofficial Python 3.12+ client for Notion.so's internal API (v3). Provides a core
+**unpy-mcp** (**un**official Notion **p**ython) — Unofficial Python 3.12+ client for Notion.so's internal API (v3). Provides a core
 library, CLI, and MCP server — all powered by the `token_v2` cookie from a logged-in
 Notion browser session. Works for Guest users (unlike the official Notion API).
+Renamed from notion-py (v0.x) to unpy-mcp in v1.0.0: imports are `unpy`,
+`unpy_cli`, `unpy_mcp`; config lives in `~/.config/unpy-mcp` (legacy
+`~/.config/notion-py` is auto-migrated on first run).
 
 **Authentication**: Uses `token_v2` cookie from a logged-in Notion browser session.
 
 ## Monorepo Structure (v2)
 
 ```
-notion-py/
+unpy-mcp/
 ├── pyproject.toml              ← uv workspace root
 ├── packages/
-│   ├── npy-core/src/notion/    ← Core library (was notion/ in v1)
-│   ├── npy-cli/src/notion_cli/ ← CLI (Typer, 15 commands)
-│   └── npy-mcp/src/notion_mcp/ ← MCP server (stdio + HTTP, 15 tools)
-├── tests/                      ← pytest + vcr.py (57 tests)
+│   ├── unpy-core/src/unpy/    ← Core library (was `notion/` before the unpy rename)
+│   ├── unpy-cli/src/unpy_cli/ ← CLI (Typer, 25 commands)
+│   └── unpy-mcp/src/unpy_mcp/ ← MCP server (stdio + HTTP, 25 tools)
+├── tests/                      ← pytest + vcr.py (126 tests)
 ├── docs/adr/                   ← 5 Architecture Decision Records
 ├── CONTEXT.md                  ← Domain glossary
 └── run_smoke_test.py           ← Legacy smoke test (live Notion)
@@ -31,7 +34,7 @@ notion-py/
 # Install (dev)
 uv sync --extra dev
 
-# Run tests (57 tests, no live Notion calls)
+# Run tests (126 tests, no live Notion calls)
 python -m pytest tests/ -v
 
 # Run smoke test (requires live Notion credentials)
@@ -39,13 +42,13 @@ python run_smoke_test.py --page [NOTION_PAGE_URL] --token [NOTION_TOKEN_V2]
 # Or set NOTION_TOKEN env var instead of --token
 
 # CLI
-PYTHONPATH=packages/npy-core/src:packages/npy-cli/src python -m notion_cli --help
+PYTHONPATH=packages/unpy-core/src:packages/unpy-cli/src python -m unpy_cli --help
 
 # MCP server (stdio for Claude Desktop)
-PYTHONPATH=packages/npy-core/src:packages/npy-mcp/src python -m notion_mcp
+PYTHONPATH=packages/unpy-core/src:packages/unpy-mcp/src python -m unpy_mcp
 
 # MCP server (HTTP with auth)
-NOTION_MCP_AUTH_TOKEN=secret python -m notion_mcp --transport http --port 8000
+NOTION_MCP_AUTH_TOKEN=secret python -m unpy_mcp --transport http --port 8000
 ```
 
 ## Environment Variables
@@ -55,12 +58,12 @@ NOTION_MCP_AUTH_TOKEN=secret python -m notion_mcp --transport http --port 8000
 - `NOTION_SPACE_ID` — space to bind as current space
 - `NOTION_ALLOW_WRITE` — set to `1` to enable write commands/tools
 - `NOTION_MCP_AUTH_TOKEN` — Bearer token for MCP HTTP transport
-- `NOTION_CONFIG_DIR` — config directory (default `~/.config/notion-py`)
+- `NOTION_CONFIG_DIR` — config directory (default `~/.config/unpy-mcp`)
 - `NOTIONPY_LOG_LEVEL` — logging level: debug, info, warning, error, disabled
 
 ## Architecture (v2)
 
-### Core (`npy-core`)
+### Core (`unpy-core`)
 
 - **`NotionClient`** (`client.py`): Main entry point. HTTP session with retry logic,
   RecordStore, auth, transaction submission via `saveTransactionsFanout` endpoint.
@@ -73,16 +76,16 @@ NOTION_MCP_AUTH_TOKEN=secret python -m notion_mcp --transport http --port 8000
 - **`markdown.py`**: Notion rich-text ↔ CommonMark conversion.
 - **`operations.py`**: Transaction operation builder.
 
-### CLI (`npy-cli`)
+### CLI (`unpy-cli`)
 
-- **Typer** framework, 15 commands (6 read + 9 write) + 3 auth subcommands.
+- **Typer** framework, 25 commands + 3 auth subcommands.
 - Write commands gated by `NOTION_ALLOW_WRITE=1` env var.
 - Output: Markdown (default) or JSON (`--format json`).
 
-### MCP Server (`npy-mcp`)
+### MCP Server (`unpy-mcp`)
 
 - **MCP Python SDK v2** (`MCPServer` + decorator pattern).
-- 15 tools (6 read + 9 write), write tools gated by `NOTION_ALLOW_WRITE=1`.
+- 25 tools (8 read + 17 write), write tools gated by `NOTION_ALLOW_WRITE=1`.
 - Two transports: `stdio` (local, default) and `streamable-http` (remote).
 - HTTP transport supports Bearer token auth via `NOTION_MCP_AUTH_TOKEN`.
 
@@ -129,7 +132,7 @@ the domain glossary.
 (bug fixes, new features, API changes), create a new release. Pure doc-only
 changes that don't affect code behavior do NOT require a release.
 
-**Release process**: Use the release skill (`packages/npy-mcp/skills/release/`).
+**Release process**: Use the release skill (`packages/unpy-mcp/skills/release/`).
 Steps:
 1. Run tests: `python -m pytest tests/ -v`
 2. Determine version bump: `fix:` → patch, `feat:` → minor, `breaking` → major

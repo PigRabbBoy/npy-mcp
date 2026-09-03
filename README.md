@@ -1,11 +1,13 @@
-# npy-mcp — Notion MCP Server + CLI
+# unpy-mcp — Notion MCP Server + CLI
+
+> **unpy** = **un**official Notion **p**ython — a cookie-based client for Notion's internal API.
 
 Unofficial Python 3.12+ client for Notion's internal API (v3). Three packages
 in one repo:
 
-- **npy-mcp** — MCP server (25 tools) for Claude Desktop, Cursor, VS Code, Codex, Claude Code
-- **npy-cli** — command-line tool (25 commands, same capabilities)
-- **npy-core** — Python library you can build on directly
+- **unpy-mcp** — MCP server (25 tools) for Claude Desktop, Cursor, VS Code, Codex, Claude Code
+- **unpy-cli** — command-line tool (25 commands, same capabilities)
+- **unpy-core** — Python library you can build on directly
 
 Everything is powered by the `token_v2` cookie from your logged-in Notion
 browser session — so it **works for Guest users**, which the official API
@@ -82,9 +84,9 @@ curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/u
 ```json
 {
   "mcpServers": {
-    "notion-py": {
+    "unpy-mcp": {
       "command": "uvx",
-      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/npy-mcp", "notion-mcp"],
+      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/unpy-mcp", "unpy-mcp"],
       "env": {
         "NOTION_TOKEN_V2": "v03%3AeyJ..."
       }
@@ -97,10 +99,10 @@ curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/u
 ```json
 {
   "servers": {
-    "notion-py": {
+    "unpy-mcp": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/npy-mcp", "notion-mcp"],
+      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/unpy-mcp", "unpy-mcp"],
       "env": { "NOTION_TOKEN_V2": "v03%3AeyJ..." }
     }
   }
@@ -109,9 +111,9 @@ curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/u
 
 **Codex** (`~/.codex/config.toml`):
 ```toml
-[mcp_servers.notion-py]
+[mcp_servers.unpy-mcp]
 command = "uvx"
-args = ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/npy-mcp", "notion-mcp"]
+args = ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/unpy-mcp", "unpy-mcp"]
 env = { NOTION_TOKEN_V2 = "v03%3AeyJ..." }
 ```
 
@@ -119,7 +121,7 @@ env = { NOTION_TOKEN_V2 = "v03%3AeyJ..." }
 ```json
 {
   "mcpServers": {
-    "notion-py": {
+    "unpy-mcp": {
       "command": "docker",
       "args": ["run", "--rm", "-i", "-e", "NOTION_TOKEN_V2", "pigrabbboy/npy-mcp:latest", "--transport", "stdio"],
       "env": { "NOTION_TOKEN_V2": "v03%3AeyJ..." }
@@ -130,9 +132,9 @@ env = { NOTION_TOKEN_V2 = "v03%3AeyJ..." }
 
 **pip install** (Python developers):
 ```bash
-pip install "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/npy-mcp"
+pip install "git+https://github.com/PigRabbBoy/npy-mcp#subdirectory=packages/unpy-mcp"
 ```
-Then use `"command": "python"`, `"args": ["-m", "notion_mcp"]` in the config.
+Then use `"command": "python"`, `"args": ["-m", "unpy_mcp"]` in the config.
 </details>
 
 <details>
@@ -186,7 +188,7 @@ All **25 tools** (8 read + 17 write):
 | `import_csv` | CSV → inline database |
 | `add_comment` | Comment on a page (new thread or reply) |
 
-Full reference: [`TOOLS.md`](packages/npy-mcp/skills/notion-mcp/TOOLS.md)
+Full reference: [`TOOLS.md`](packages/unpy-mcp/skills/unpy-mcp/TOOLS.md)
 
 <details>
 <summary><b>Schema provisioning example</b> — relations, formulas, rollups</summary>
@@ -221,37 +223,37 @@ Prefer the terminal? Same capabilities, 25 commands:
 
 ```bash
 # install from source (provides the `notion` command)
-git clone https://github.com/PigRabbBoy/npy-mcp.git && cd notion-py
+git clone https://github.com/PigRabbBoy/npy-mcp.git && cd unpy-mcp
 uv sync
 export NOTION_TOKEN_V2="v03%3AeyJ..."
-uv run notion --help
+uv run unpy --help
 ```
 
 ```bash
 # Read
-uv run notion search "project"                    # search pages/blocks
-uv run notion get-page <PAGE_ID> --depth 2        # page tree as markdown
-uv run notion list-pages                          # recent top-level pages
-uv run notion get-database <DB_ID> --sample 5     # schema + sample rows
-uv run notion query-database <DB_ID> --limit 20   # query rows
-uv run notion get-image <BLOCK_ID>                # download an image
-uv run notion get-comments <PAGE_ID>              # read comments
+uv run unpy search "project"                    # search pages/blocks
+uv run unpy get-page <PAGE_ID> --depth 2        # page tree as markdown
+uv run unpy list-pages                          # recent top-level pages
+uv run unpy get-database <DB_ID> --sample 5     # schema + sample rows
+uv run unpy query-database <DB_ID> --limit 20   # query rows
+uv run unpy get-image <BLOCK_ID>                # download an image
+uv run unpy get-comments <PAGE_ID>              # read comments
 
 # Write (requires NOTION_ALLOW_WRITE=1)
-uv run notion create-page <PARENT_ID> --title "New Page"
-uv run notion append-blocks <PAGE_ID> --blocks '[{"type":"todo","text":"Ship it"}]'
-uv run notion add-database-row <DB_ID> --properties '{"Name":"New row","Status":"Todo"}'
-uv run notion create-database <PARENT_ID> --title "Tasks" \
+uv run unpy create-page <PARENT_ID> --title "New Page"
+uv run unpy append-blocks <PAGE_ID> --blocks '[{"type":"todo","text":"Ship it"}]'
+uv run unpy add-database-row <DB_ID> --properties '{"Name":"New row","Status":"Todo"}'
+uv run unpy create-database <PARENT_ID> --title "Tasks" \
   --columns '[{"name":"Name","type":"title"},{"name":"Done","type":"checkbox"}]'
-uv run notion add-comment <PAGE_ID> --text "Look at this"
+uv run unpy add-comment <PAGE_ID> --text "Look at this"
 
 # Auth
-uv run notion auth whoami && uv run notion auth spaces
+uv run unpy auth whoami && uv run unpy auth spaces
 ```
 
 > Tip: `source .venv/bin/activate` once and you can drop the `uv run` prefix.
 
-Run `notion <command> --help` for every option. Write commands refuse to run
+Run `unpy <command> --help` for every option. Write commands refuse to run
 without `NOTION_ALLOW_WRITE=1`.
 
 ---
@@ -276,15 +278,15 @@ first space found is used.
 
 ```bash
 # List your spaces (the * marks the current one)
-uv run notion auth spaces
+uv run unpy auth spaces
 
-# Set default (persisted to ~/.config/notion-py/config.toml)
-uv run notion auth use-space <SPACE_ID>
+# Set default (persisted to ~/.config/unpy-mcp/config.toml)
+uv run unpy auth use-space <SPACE_ID>
 ```
 
 Or via env var / MCP config: `"NOTION_SPACE_ID": "<space-id>"`
 
-Resolution order: `NOTION_SPACE_ID` env → `~/.config/notion-py/config.toml` → first space in token data.
+Resolution order: `NOTION_SPACE_ID` env → `~/.config/unpy-mcp/config.toml` → first space in token data.
 
 <details>
 <summary>Other ways to find your space ID</summary>
@@ -305,7 +307,7 @@ Run one shared server over HTTP with Bearer auth:
 ```bash
 NOTION_TOKEN_V2="your-token" \
 NOTION_MCP_AUTH_TOKEN="shared-secret" \
-python -m notion_mcp --transport http --host 0.0.0.0 --port 8000
+python -m unpy_mcp --transport http --host 0.0.0.0 --port 8000
 ```
 
 Point your AI client at it:
@@ -313,7 +315,7 @@ Point your AI client at it:
 ```json
 {
   "mcpServers": {
-    "notion-py": {
+    "unpy-mcp": {
       "url": "http://your-server:8000/mcp",
       "headers": { "Authorization": "Bearer shared-secret" }
     }
@@ -346,7 +348,7 @@ No header → falls back to the server's `NOTION_TOKEN_V2`.
 docker pull pigrabbboy/npy-mcp:latest
 
 # Build yourself (from repo root)
-docker build -t notion-mcp -f packages/npy-mcp/Dockerfile .
+docker build -t unpy-mcp -f packages/unpy-mcp/Dockerfile .
 
 # Run as HTTP server
 docker run -d -p 8000:8000 \
@@ -356,7 +358,7 @@ docker run -d -p 8000:8000 \
   pigrabbboy/npy-mcp:latest
 
 # Or docker compose
-cd packages/npy-mcp && cp .env.example .env && docker compose up -d
+cd packages/unpy-mcp && cp .env.example .env && docker compose up -d
 ```
 </details>
 
@@ -364,10 +366,10 @@ cd packages/npy-mcp && cp .env.example .env && docker compose up -d
 
 ## Python library
 
-Use `npy-core` directly in your own code:
+Use `unpy-core` directly in your own code:
 
 ```python
-from notion.client import NotionClient
+from unpy.client import NotionClient
 
 client = NotionClient(token_v2="v03%3AeyJ...")
 
@@ -376,7 +378,7 @@ page = client.get_block("<PAGE_URL_OR_ID>")
 print(page.title_plaintext)
 
 # query a database with formulas/rollups evaluated
-from notion.collection import CollectionQuery
+from unpy.collection import CollectionQuery
 cv = client.get_collection_view("<DB_URL>")
 for row in cv.build_query().execute():
     print(row.title, row.get_property("Budget Rollup"))
@@ -393,13 +395,13 @@ row.Done = True
 Ship-ready skills so your agent knows which tool to use when:
 
 ```bash
-# notion-mcp skill: tool selection, workflows, write safety
-cp -r packages/npy-mcp/skills/notion-mcp ~/.claude/skills/notion-mcp   # Claude Code
-cp -r packages/npy-mcp/skills/notion-mcp ~/.config/opencode/skills/    # opencode
+# unpy-mcp skill: tool selection, workflows, write safety
+cp -r packages/unpy-mcp/skills/unpy-mcp ~/.claude/skills/unpy-mcp   # Claude Code
+cp -r packages/unpy-mcp/skills/unpy-mcp ~/.config/opencode/skills/    # opencode
 # (same pattern for ~/.agents/skills/)
 
 # release skill: versioning, changelog, tagging
-cp -r packages/npy-mcp/skills/release ~/.claude/skills/release
+cp -r packages/unpy-mcp/skills/release ~/.claude/skills/release
 ```
 
 - `SKILL.md` — when to use which tool, common workflows, write safety rules
@@ -416,9 +418,9 @@ python run_smoke_test.py --page <URL> --token <TOKEN_V2>   # live integration te
 ```
 
 ```
-notion-py/
+unpy-mcp/
 ├── packages/
-│   ├── npy-core/src/notion/       ← Core library
+│   ├── unpy-core/src/unpy/        ← Core library
 │   │   ├── client.py              ← NotionClient (HTTP, auth, transactions)
 │   │   ├── block.py               ← Block + 38 subclasses
 │   │   ├── collection.py          ← Databases, rows, query builder
@@ -426,11 +428,12 @@ notion-py/
 │   │   ├── markdown.py            ← rich-text ↔ CommonMark
 │   │   ├── auth.py                ← token + space resolution
 │   │   └── operations.py          ← transaction op builder
-│   ├── npy-cli/src/notion_cli/    ← CLI (Typer, 25 commands)
-│   └── npy-mcp/src/notion_mcp/    ← MCP server (25 tools, stdio + HTTP)
+│   ├── unpy-cli/src/unpy_cli/     ← CLI (Typer, 25 commands)
+│   └── unpy-mcp/src/unpy_mcp/     ← MCP server (25 tools, stdio + HTTP)
 ├── tests/                         ← 126 tests (pytest + vcr.py)
 ├── docs/adr/                      ← 8 Architecture Decision Records
 ├── CONTEXT.md                     ← Domain glossary
+├── scripts/                       ← one-command installer + uninstaller
 └── run_smoke_test.py              ← live integration test
 ```
 

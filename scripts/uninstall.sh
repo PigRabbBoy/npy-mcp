@@ -3,7 +3,7 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/uninstall.sh | bash
 #
-# Removes the "notion-py" entry from the AI clients you pick. Other MCP
+# Removes the "unpy-mcp" entry from the AI clients you pick. Other MCP
 # servers in the same config file are left untouched. A .bak-* backup is
 # made before every write.
 
@@ -95,9 +95,9 @@ try:
 except Exception:
     print("SKIP"); exit()
 servers = cfg.get(key)
-if not isinstance(servers, dict) or "notion-py" not in servers:
+if not isinstance(servers, dict) or "unpy-mcp" not in servers:
     print("ABSENT"); exit()
-del servers["notion-py"]
+del servers["unpy-mcp"]
 with open(path, "w") as f:
     json.dump(cfg, f, indent=2)
     f.write("\n")
@@ -113,12 +113,12 @@ try:
     content = open(path).read()
 except Exception:
     print("SKIP"); exit()
-if "[mcp_servers.notion-py]" not in content:
+if "[mcp_servers.unpy-mcp]" not in content:
     print("ABSENT"); exit()
 lines = content.splitlines()
 out, skip = [], False
 for line in lines:
-    if line.strip() == "[mcp_servers.notion-py]":
+    if line.strip() == "[mcp_servers.unpy-mcp]":
         skip = True; continue
     if skip and line.startswith("["):
         skip = False
@@ -129,7 +129,7 @@ print("REMOVED")
 PYEOF
 }
 
-say "Removing notion-py from configs…"
+say "Removing unpy-mcp from configs…"
 for c in "${CLIENTS[@]}"; do
   spec="$(client_paths "$c")"
   IFS='|' read -r primary fallback <<< "$spec"
@@ -146,12 +146,12 @@ try:
     content = open(path).read()
 except Exception:
     print("SKIP"); exit()
-if "[mcp_servers.notion-py]" not in content:
+if "[mcp_servers.unpy-mcp]" not in content:
     print("ABSENT"); exit()
 lines = content.splitlines()
 out, skip = [], False
 for line in lines:
-    if line.strip() == "[mcp_servers.notion-py]":
+    if line.strip() == "[mcp_servers.unpy-mcp]":
         skip = True; continue
     if skip and line.startswith("["):
         skip = False

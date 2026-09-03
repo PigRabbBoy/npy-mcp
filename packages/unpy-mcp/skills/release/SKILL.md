@@ -48,9 +48,9 @@ Update `version = "X.Y.Z"` in all of these:
 | File | Current |
 |---|---|
 | `pyproject.toml` | root |
-| `packages/npy-core/pyproject.toml` | core lib |
-| `packages/npy-cli/pyproject.toml` | CLI |
-| `packages/npy-mcp/pyproject.toml` | MCP server |
+| `packages/unpy-core/pyproject.toml` | core lib |
+| `packages/unpy-cli/pyproject.toml` | CLI |
+| `packages/unpy-mcp/pyproject.toml` | MCP server |
 
 All 4 must have the same version.
 
@@ -94,7 +94,7 @@ gh release create vX.Y.Z --generate-notes -R PigRabbBoy/npy-mcp
 Ask the user if they want to publish a Docker image. If yes:
 
 ```bash
-cd packages/npy-mcp
+cd packages/unpy-mcp
 docker build -t pigrabbboy/npy-mcp:X.Y.Z -t pigrabbboy/npy-mcp:latest .
 docker push pigrabbboy/npy-mcp:X.Y.Z
 docker push pigrabbboy/npy-mcp:latest

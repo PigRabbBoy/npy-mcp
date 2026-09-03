@@ -15,18 +15,18 @@ import os
 import sys
 from typing import Annotated
 
-# Ensure npy-core is importable when running from source without install
-_CORE_SRC = os.path.join(os.path.dirname(__file__), "..", "..", "npy-core", "src")
+# Ensure unpy-core is importable when running from source without install
+_CORE_SRC = os.path.join(os.path.dirname(__file__), "..", "..", "unpy-core", "src")
 if os.path.isdir(_CORE_SRC) and os.path.abspath(_CORE_SRC) not in sys.path:
     sys.path.insert(0, os.path.abspath(_CORE_SRC))
 
 from mcp.server import MCPServer
 
-from notion import NotionClient
-from notion.auth import resolve_auth
+from unpy import NotionClient
+from unpy.auth import resolve_auth
 from . import formula_eval as _fev
 
-mcp = MCPServer("notion-py")
+mcp = MCPServer("unpy-mcp")
 
 # Context variable for per-request Notion token (set by HTTP middleware)
 # When None, falls back to env var NOTION_TOKEN_V2
@@ -44,7 +44,7 @@ def _get_client() -> NotionClient:
     Token resolution (first non-empty wins):
     1. Per-request token from contextvar (set by HTTP middleware via X-Notion-Token header)
     2. NOTION_TOKEN_V2 / NOTION_TOKEN env var
-    3. ~/.config/notion-py/token config file
+    3. ~/.config/unpy-mcp/token config file
 
     Raises RuntimeError with a helpful message if the token is invalid or expired,
     instead of letting the HTTP 401 crash the MCP connection.
@@ -140,10 +140,10 @@ def _block_tree(client: NotionClient, block, depth: int) -> dict:
 def _render_property(value) -> str:
     """Render a Notion property value to a readable string.
 
-    Shared implementation lives in npy-core (notion.render) so the CLI and
+    Shared implementation lives in unpy-core (unpy.render) so the CLI and
     the MCP server never drift apart.
     """
-    from notion.render import render_property
+    from unpy.render import render_property
 
     return render_property(value)
 
@@ -1436,7 +1436,7 @@ def _import_csv_impl(client, parent, file_path: str, title: str = "") -> str:
     cvb.title = title
     cvb.views.add_new(view_type="table")
 
-    from notion.utils import slugify
+    from unpy.utils import slugify
 
     title_slug = slugify(schema[title_prop_id]["name"])
     for row in rows_data:
@@ -1532,7 +1532,7 @@ def _build_collection_schema(col_specs: list, client=None, parent_space_id: str 
 
 def _resolve_collection_id(client, ref: str) -> str:
     """Resolve a database URL/ID to a collection ID (tolerates short ids)."""
-    from notion.utils import extract_id
+    from unpy.utils import extract_id
 
     raw = (ref or "").strip()
     if not raw:
@@ -1634,7 +1634,7 @@ def _build_rollup_prop(spec: dict, client) -> dict:
 
 
 def _find_prop_id(schema: dict, name: str) -> str:
-    from notion.utils import slugify as _slug
+    from unpy.utils import slugify as _slug
     want = _slug(name).lower()
     for pid, p in schema.items():
         if _slug(p.get("name", "")).lower() == want:
@@ -1688,7 +1688,7 @@ def get_comments(
 
 
 if _WRITE_ENABLED:
-    from notion.block import (
+    from unpy.block import (
         PageBlock, TextBlock, TodoBlock, HeaderBlock, SubheaderBlock,
         SubsubheaderBlock, CalloutBlock, BulletedListBlock, NumberedListBlock,
         QuoteBlock, CodeBlock, DividerBlock, ToggleBlock, EquationBlock,
@@ -1699,7 +1699,7 @@ if _WRITE_ENABLED:
         DriveBlock, HtmlBlock, MiroBlock, ExcalidrawBlock, ReplitBlock,
         DeepnoteBlock, SketchBlock, AbstractBlock, MixpanelBlock,
     )
-    from notion.collection import Collection
+    from unpy.collection import Collection
 
     @mcp.tool()
     def add_comment(
@@ -2092,7 +2092,7 @@ if _WRITE_ENABLED:
         # (autoRelate alone does not create a reverse property, and Notion
         # rejects a dangling back-reference).
         if deferred:
-            from notion.operations import build_collection_schema_update
+            from unpy.operations import build_collection_schema_update
             space_id = client.current_space.id if client.current_space else ""
             ops = [build_collection_schema_update(collection_id, fwd_pid, fwd)
                    for _, fwd_pid, fwd in deferred]
@@ -2234,7 +2234,7 @@ if _WRITE_ENABLED:
         # "property": <reverse_pid> is REJECTED (400) unless the reverse
         # property is written in the SAME transaction — Notion validates the
         # back-reference. So two-way relations must submit both ops together.
-        from notion.operations import build_collection_schema_update
+        from unpy.operations import build_collection_schema_update
         current_schema = collection.get("schema") or {}
         current_schema[prop_id] = prop
 
@@ -2425,7 +2425,7 @@ if _WRITE_ENABLED:
         Returns:
             Confirmation with column block IDs.
         """
-        from notion.block import ColumnListBlock, ColumnBlock
+        from unpy.block import ColumnListBlock, ColumnBlock
         client = _get_client()
         parent = client.get_block(parent_id)
         if parent is None:

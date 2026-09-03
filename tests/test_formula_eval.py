@@ -6,7 +6,7 @@ Pure-language coverage with a fake context — no Notion calls.
 import pytest
 from datetime import date
 
-from notion_mcp import formula_eval as fe
+from unpy_mcp import formula_eval as fe
 
 
 class FakeCtx:

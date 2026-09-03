@@ -10,17 +10,17 @@ import pytest
 @pytest.fixture
 def temp_config(monkeypatch, tmp_path):
     """Redirect config dir to a temp directory and reload auth module."""
-    monkeypatch.setenv("NOTION_CONFIG_DIR", str(tmp_path / "notion-py"))
+    monkeypatch.setenv("NOTION_CONFIG_DIR", str(tmp_path / "unpy-mcp"))
     import importlib
-    import notion.auth
-    importlib.reload(notion.auth)
+    import unpy.auth
+    importlib.reload(unpy.auth)
     return tmp_path
 
 
 def _get_auth():
     """Re-import auth module to get fresh classes after reload."""
-    import notion.auth
-    return notion.auth
+    import unpy.auth
+    return unpy.auth
 
 
 class TestResolveToken:

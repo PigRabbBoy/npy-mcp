@@ -2,7 +2,7 @@
 
 import time
 
-from notion.operations import build_operation, operation_update_last_edited
+from unpy.operations import build_operation, operation_update_last_edited
 
 
 class TestBuildOperation:

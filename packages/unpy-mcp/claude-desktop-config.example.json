@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "unpy-mcp": {
+      "command": "python",
+      "args": [
+        "-m",
+        "unpy_mcp"
+      ],
+      "env": {
+        "NOTION_TOKEN_V2": "your-token_v2-here",
+        "PYTHONPATH": "/path/to/repo/packages/unpy-core/src:/path/to/repo/packages/unpy-mcp/src"
+      }
+    }
+  }
+}

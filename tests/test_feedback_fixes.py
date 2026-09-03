@@ -5,10 +5,10 @@ from datetime import date, datetime
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "packages", "npy-core", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "packages", "unpy-core", "src"))
 
-from notion.collection import NotionDate
-from notion.render import render_property
+from unpy.collection import NotionDate
+from unpy.render import render_property
 
 
 class _FakeRow:
@@ -66,7 +66,7 @@ class TestNotionDateFromIsoformat:
 
 class TestDateConversion:
     def _convert(self, val):
-        from notion.collection import CollectionRowBlock
+        from unpy.collection import CollectionRowBlock
 
         prop = {"type": "date", "name": "D", "id": "x"}
         # _convert_python_to_notion's date branch doesn't touch client state —
@@ -143,14 +143,14 @@ class TestRenderProperty:
 
 class TestBuildSchema:
     def _client(self):
-        from notion.client import NotionClient
+        from unpy.client import NotionClient
 
         c = NotionClient.__new__(NotionClient)
         c.current_space = type("S", (), {"id": "sp1"})()
         return c
 
     def test_relation_with_target(self):
-        from notion_mcp.server import _build_relation_prop
+        from unpy_mcp.server import _build_relation_prop
 
         spec = {"name": "Rel", "target_database_id": "8c3f85d3-3368"}
         prop = _build_relation_prop(spec, None, "sp1")
@@ -159,7 +159,7 @@ class TestBuildSchema:
         assert "limit" not in prop  # dual by default
 
     def test_relation_single_mode(self):
-        from notion_mcp.server import _build_relation_prop
+        from unpy_mcp.server import _build_relation_prop
 
         prop = _build_relation_prop(
             {"name": "R", "target_database_id": "x", "limit": 1}, None, "sp1"
@@ -167,7 +167,7 @@ class TestBuildSchema:
         assert prop["limit"] == 1
 
     def test_relation_reverse_name(self):
-        from notion_mcp.server import _build_relation_prop
+        from unpy_mcp.server import _build_relation_prop
 
         prop = _build_relation_prop(
             {"name": "R", "target_database_id": "x", "reverse_name": "Built-on"},
@@ -181,7 +181,7 @@ class TestBuildSchema:
         assert isinstance(prop["property"], str) and len(prop["property"]) == 4
 
     def test_relation_no_reverse(self):
-        from notion_mcp.server import _build_relation_prop
+        from unpy_mcp.server import _build_relation_prop
 
         prop = _build_relation_prop(
             {"name": "R", "target_database_id": "x"}, None, "sp1"
@@ -191,13 +191,13 @@ class TestBuildSchema:
         assert "version" not in prop
 
     def test_relation_requires_target(self):
-        from notion_mcp.server import _build_relation_prop
+        from unpy_mcp.server import _build_relation_prop
 
         with pytest.raises(ValueError, match="target_database_id"):
             _build_relation_prop({"name": "R"}, None, "sp1")
 
     def test_formula_encode(self):
-        from notion_mcp.formula_eval import encode_expr, build_expr
+        from unpy_mcp.formula_eval import encode_expr, build_expr
 
         code = encode_expr('if({"Done"}, 1, 0)')
         src, refs = build_expr({"formula2": {"code": code}})
@@ -206,7 +206,7 @@ class TestBuildSchema:
         assert refs[0]["name"] == "Done"
 
     def test_formula_encode_with_meta(self):
-        from notion_mcp.formula_eval import encode_expr, build_expr
+        from unpy_mcp.formula_eval import encode_expr, build_expr
 
         code = encode_expr('if({"Done"}, 1, 0)', {"Done": {"property": "dd11", "collection": {"id": "cc22", "table": "collection", "spaceId": "sp"}}})
         _, refs = build_expr({"formula2": {"code": code}})
@@ -214,7 +214,7 @@ class TestBuildSchema:
         assert refs[0]["collection"]["id"] == "cc22"
 
     def test_rollup_resolves_ids(self):
-        from notion_mcp.server import _build_rollup_prop
+        from unpy_mcp.server import _build_rollup_prop
 
         spec = {
             "name": "Total",
@@ -249,7 +249,7 @@ class TestBuildSchema:
         assert prop["rollup_type"] == "relation"
 
     def test_rollup_missing_relation_raises(self):
-        from notion_mcp.server import _build_rollup_prop
+        from unpy_mcp.server import _build_rollup_prop
 
         with pytest.raises(ValueError, match="relation property"):
             _build_rollup_prop(
@@ -271,7 +271,7 @@ class TestFetchAllSemantics:
         # Probed live: queryCollection returns the FULL result set in one
         # request when limit >= total (no cursor pagination exists).
         # CollectionQuery.execute(limit=-1) already implements total-fetch.
-        from notion.collection import CollectionQuery
+        from unpy.collection import CollectionQuery
 
         q = CollectionQuery(
             collection=type("C", (), {"id": "x", "_client": None})(),
@@ -286,7 +286,7 @@ class TestFileUploadBranch:
         """Issue #1: local-path branch must bind mimetype before S3 PUT."""
         import inspect
 
-        from notion.collection import CollectionRowBlock
+        from unpy.collection import CollectionRowBlock
 
         src = inspect.getsource(CollectionRowBlock._convert_python_to_notion)
         assert 'mimetype = (' in src or 'mimetype =' in src, (
@@ -300,7 +300,7 @@ class TestRowIdentity:
     """Issue #3: query output must carry row identity for read-then-write."""
 
     def test_safe_props_shape(self):
-        from notion_cli.render import _safe_props
+        from unpy_cli.render import _safe_props
 
         row = _FakeRow("abc-def", "X")
         out = _safe_props(row)
@@ -310,7 +310,7 @@ class TestRowIdentity:
 
     def test_user_id_column_not_shadowed(self):
         # a column literally named "id" must not clobber row identity
-        from notion_cli.render import _safe_props
+        from unpy_cli.render import _safe_props
 
         class RowWithIdCol:
             def __init__(self):
@@ -337,13 +337,13 @@ class TestInTransactionFetch:
     def test_call_get_record_values_force_signature(self):
         import inspect
 
-        from notion.store import RecordStore
+        from unpy.store import RecordStore
 
         sig = inspect.signature(RecordStore.call_get_record_values)
         assert "_force_real_request" in sig.parameters
 
     def test_get_block_none_relation_raises_clearly(self):
-        from notion.collection import CollectionRowBlock
+        from unpy.collection import CollectionRowBlock
         import inspect
 
         src = inspect.getsource(CollectionRowBlock._convert_python_to_notion)
@@ -354,7 +354,7 @@ class TestComments:
     """get_comments / add_comment (page comments feature)."""
 
     def test_creval_get_flat_and_nested(self):
-        from notion.client import creval_get
+        from unpy.client import creval_get
 
         flat = {"id": "c1", "text": [["hi"]], "parent_table": "discussion"}
         assert creval_get(flat) is flat
@@ -382,7 +382,7 @@ class TestComments:
         # listAfter + set text
         import inspect
 
-        from notion.client import NotionClient
+        from unpy.client import NotionClient
 
         src = inspect.getsource(NotionClient.add_comment)
         assert '"parent_table": "block"' in src  # new discussion
@@ -396,7 +396,7 @@ class TestAddComment:
     def test_new_thread_uses_update_discussion_op(self):
         import inspect
 
-        from notion.client import NotionClient
+        from unpy.client import NotionClient
 
         src = inspect.getsource(NotionClient.add_comment)
         # new-thread creates the discussion with an *update* op (partial args)
@@ -408,7 +408,7 @@ class TestAddComment:
     def test_reply_uses_list_after(self):
         import inspect
 
-        from notion.client import NotionClient
+        from unpy.client import NotionClient
 
         src = inspect.getsource(NotionClient.add_comment)
         assert '["comments"]' in src and '"listAfter"' in src
@@ -419,7 +419,7 @@ class TestAddComment:
 
 class TestTwoWayRelationOps:
     def test_build_collection_schema_update_shape(self):
-        from notion.operations import build_collection_schema_update
+        from unpy.operations import build_collection_schema_update
 
         op = build_collection_schema_update("coll1", "ab12", {"name": "X"})
         assert op["command"] == "updateCollectionPropertySchema"
@@ -433,7 +433,7 @@ class TestTwoWayRelationOps:
     def test_store_unwraps_primitive_op(self):
         import threading
 
-        from notion.store import RecordStore
+        from unpy.store import RecordStore
 
         store = RecordStore.__new__(RecordStore)
         store._mutex = threading.Lock()
@@ -467,7 +467,7 @@ class TestTwoWayRelationOps:
         import json as _json
         import threading
 
-        from notion.collection import CollectionRowBlock
+        from unpy.collection import CollectionRowBlock
 
         submitted = []
 

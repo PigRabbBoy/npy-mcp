@@ -3,8 +3,8 @@
 Resolution order (first non-empty wins):
     1. --token / --space CLI flags (passed in by caller)
     2. NOTION_TOKEN_V2 / NOTION_SPACE_ID env vars
-    3. ~/.config/notion-py/config.toml (written by `notion use-space`)
-    4. ~/.config/notion-py/token (plain file, mode 0600)
+    3. ~/.config/unpy-mcp/config.toml (written by `unpy use-space`)
+    4. ~/.config/unpy-mcp/token (plain file, mode 0600)
 
 No browser capture — users extract token_v2 from DevTools once.
 """
@@ -17,9 +17,33 @@ from pathlib import Path
 from typing import TypedDict
 
 
-CONFIG_DIR = Path(os.environ.get("NOTION_CONFIG_DIR", "~/.config/notion-py")).expanduser()
+CONFIG_DIR = Path(os.environ.get("NOTION_CONFIG_DIR", "~/.config/unpy-mcp")).expanduser()
 CONFIG_FILE = CONFIG_DIR / "config.toml"
 TOKEN_FILE = CONFIG_DIR / "token"
+# v0.x of this project stored config under ~/.config/notion-py — fall back
+# to it so existing users' tokens/spaces keep working after the rename.
+LEGACY_CONFIG_DIR = Path("~/.config/notion-py").expanduser()
+
+
+def _migrate_legacy_config() -> None:
+    """One-time move of ~/.config/notion-py → ~/.config/unpy-mcp."""
+    if CONFIG_DIR.exists() or not LEGACY_CONFIG_DIR.exists():
+        return
+    try:
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        for item in ("config.toml", "token"):
+            legacy = LEGACY_CONFIG_DIR / item
+            if legacy.exists():
+                (CONFIG_DIR / item).write_text(legacy.read_text())
+                try:
+                    os.chmod(CONFIG_DIR / item, legacy.stat().st_mode)
+                except OSError:
+                    pass
+    except OSError:
+        pass  # migration is best-effort; legacy dir stays untouched
+
+
+_migrate_legacy_config()
 
 
 class AuthConfig(TypedDict):

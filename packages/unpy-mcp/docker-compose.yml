@@ -13,11 +13,11 @@
 #   NOTION_SPACE_ID       — bind to a specific space
 
 services:
-  notion-mcp:
+  unpy-mcp:
     build:
       context: ../..
       dockerfile: packages/npy-mcp/Dockerfile
-    image: notion-mcp:latest
+    image: unpy-mcp:latest
     ports:
       - "8000:8000"
     environment:
