@@ -8,7 +8,7 @@ Unofficial Python 3.12+ client for Notion's internal API (v3). Three packages
 in one repo:
 
 - **unpy-mcp** — MCP server (27 tools) for Claude Desktop, Cursor, VS Code, Codex, Claude Code
-- **unpy-cli** — command-line tool (25 commands, same capabilities)
+- **unpy-cli** — command-line tool (26 commands, same capabilities)
 - **unpy-core** — Python library you can build on directly
 
 Everything is powered by the `token_v2` cookie from your logged-in Notion
@@ -435,7 +435,7 @@ unpy-mcp/
 │   │   ├── markdown.py            ← rich-text ↔ CommonMark
 │   │   ├── auth.py                ← token + space resolution
 │   │   └── operations.py          ← transaction op builder
-│   ├── unpy-cli/src/unpy_cli/     ← CLI (Typer, 25 commands)
+│   ├── unpy-cli/src/unpy_cli/     ← CLI (Typer, 26 commands)
 │   └── unpy-mcp/src/unpy_mcp/     ← MCP server (27 tools, stdio + HTTP)
 ├── tests/                         ← 126 tests (pytest + vcr.py)
 ├── docs/adr/                      ← 8 Architecture Decision Records

@@ -83,7 +83,7 @@ NOTION_MCP_AUTH_TOKEN=secret python -m unpy_mcp --transport http --port 8000
 
 ### CLI (`unpy-cli`)
 
-- **Typer** framework, 25 commands + 3 auth subcommands.
+- **Typer** framework, 26 commands + 3 auth subcommands.
 - Write commands gated by `NOTION_ALLOW_WRITE=1` env var.
 - Output: Markdown (default) or JSON (`--format json`).
 

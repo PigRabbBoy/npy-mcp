@@ -194,9 +194,10 @@ def create_page(
     parent_id: str = typer.Argument(..., help="Parent page URL or ID"),
     title: str = typer.Option(..., "--title", help="Title for the new page"),
     icon: str = typer.Option("", "--icon", help="Optional emoji icon (e.g. '📄')"),
+    blocks: str = typer.Option("", "--blocks", "-b", help='Optional JSON array (same format as append-blocks) — create the page with content in one step'),
     token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
 ) -> None:
-    """Create a new page under a parent block."""
+    """Create a new page under a parent block, optionally with content."""
     _check_write_enabled()
     from unpy.block import PageBlock
     client = get_client(token_arg=token)
@@ -207,7 +208,10 @@ def create_page(
     page = parent.children.add_new(PageBlock, title=title)
     if icon:
         page.icon = icon
-    typer.echo(f"Created page: {page.get_browseable_url()}")
+    if blocks:
+        from unpy_mcp.server import _add_blocks_from_specs
+        _add_blocks_from_specs(page, json.loads(blocks))
+    typer.echo(f"Created page {page.id} — {page.get_browseable_url()}")
 
 
 @app.command(name="append-blocks")
@@ -216,42 +220,15 @@ def append_blocks(
     blocks: str = typer.Option(..., "--blocks", "-b", help='JSON array, e.g. \'[{"type":"text","text":"Hello"},{"type":"todo","text":"Task","checked":true}]\''),
     token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
 ) -> None:
-    """Append blocks to a page. Supports: text, todo, header, subheader, callout, bulleted_list, numbered_list, quote, code, divider."""
+    """Append blocks to a page. Supports: text, todo, header, subheader, subsubheader, callout, bulleted_list, numbered_list, quote, code (language field), divider, toggle, equation."""
     _check_write_enabled()
-    from unpy.block import (
-        TextBlock, TodoBlock, HeaderBlock, SubheaderBlock, CalloutBlock,
-        BulletedListBlock, NumberedListBlock, QuoteBlock, CodeBlock, DividerBlock,
-    )
+    from unpy_mcp.server import _add_blocks_from_specs
     client = get_client(token_arg=token)
     parent = client.get_block(page_id)
     if parent is None:
         typer.echo(f"Page not found: {page_id}", err=True)
         raise typer.Exit(1)
-    block_specs = json.loads(blocks)
-    TYPE_MAP = {
-        "text": TextBlock,
-        "todo": TodoBlock,
-        "header": HeaderBlock,
-        "subheader": SubheaderBlock,
-        "callout": CalloutBlock,
-        "bulleted_list": BulletedListBlock,
-        "numbered_list": NumberedListBlock,
-        "quote": QuoteBlock,
-        "code": CodeBlock,
-        "divider": DividerBlock,
-    }
-    count = 0
-    for spec in block_specs:
-        btype = spec.get("type", "text")
-        text = spec.get("text", "")
-        cls = TYPE_MAP.get(btype, TextBlock)
-        kwargs = {"title": text}
-        if btype == "todo" and "checked" in spec:
-            kwargs["checked"] = spec["checked"]
-        if btype == "callout" and "icon" in spec:
-            kwargs["icon"] = spec["icon"]
-        parent.children.add_new(cls, **kwargs)
-        count += 1
+    count = _add_blocks_from_specs(parent, json.loads(blocks))
     typer.echo(f"Added {count} block(s) to {page_id}")
 
 
@@ -601,6 +578,78 @@ def add_column(
     current_schema[prop_id] = prop
     collection.set("schema", current_schema)
     typer.echo(f"Added column '{name}' (type: {type}, id: {prop_id})")
+
+
+@app.command(name="rename-column")
+def rename_column(
+    database_id: str = typer.Argument(..., help="Database URL or ID"),
+    column: str = typer.Option(..., "--column", "-c", help="Current column name or property id"),
+    new_name: str = typer.Option(..., "--name", "-n", help="The new column name"),
+    token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
+) -> None:
+    """Rename a database column (low-risk, reversible)."""
+    _check_write_enabled()
+    client = get_client(token_arg=token)
+    from unpy_mcp.server import _resolve_collection_for_write, _find_column
+    collection = _resolve_collection_for_write(client, database_id)
+    if isinstance(collection, str):
+        typer.echo(collection, err=True)
+        raise typer.Exit(1)
+    schema = collection.get("schema") or {}
+    prop_id, prop = _find_column(schema, column)
+    if prop_id is None:
+        typer.echo(f"Column not found: '{column}'. Use get-database to list columns.", err=True)
+        raise typer.Exit(1)
+    new_prop = dict(prop)
+    new_prop["name"] = new_name
+    from unpy.operations import build_collection_schema_update
+    client.submit_transaction([
+        build_collection_schema_update(collection.id, prop_id, new_prop)
+    ])
+    typer.echo(f"Renamed column '{prop.get('name')}' to '{new_name}' (id: {prop_id})")
+
+
+@app.command(name="delete-column")
+def delete_column(
+    database_id: str = typer.Argument(..., help="Database URL or ID"),
+    column: str = typer.Argument(..., help="Column name or property id"),
+    token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
+) -> None:
+    """Delete a database column (destroys that property's data in every row; recoverable in Notion's UI)."""
+    _check_write_enabled()
+    client = get_client(token_arg=token)
+    from unpy_mcp.server import _resolve_collection_for_write, _find_column
+    collection = _resolve_collection_for_write(client, database_id)
+    if isinstance(collection, str):
+        typer.echo(collection, err=True)
+        raise typer.Exit(1)
+    schema = collection.get("schema") or {}
+    prop_id, prop = _find_column(schema, column)
+    if prop_id is None:
+        typer.echo(f"Column not found: '{column}'. Use get-database to list columns.", err=True)
+        raise typer.Exit(1)
+    if prop.get("type") == "title":
+        typer.echo("Error: the title column cannot be deleted — every database must have exactly one title.", err=True)
+        raise typer.Exit(1)
+    # Mirror the Notion UI exactly (captured from TableHeaderCell.handleDeleteAccept):
+    # move the property into deleted_schema, then null it out of the live schema.
+    client.submit_transaction([
+        {
+            "id": collection.id,
+            "path": ["deleted_schema"],
+            "table": "collection",
+            "command": "updateCollectionDeletedPropertySchema",
+            "args": {"primitiveOp": {"command": "update", "args": {prop_id: prop}}},
+        },
+        {
+            "id": collection.id,
+            "path": ["schema"],
+            "table": "collection",
+            "command": "updateCollectionPropertySchema",
+            "args": {"primitiveOp": {"command": "update", "args": {prop_id: None}}},
+        },
+    ])
+    typer.echo(f"Deleted column '{prop.get('name')}' (id: {prop_id})")
 
 
 @app.command(name="create-media")

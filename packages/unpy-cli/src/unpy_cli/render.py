@@ -91,6 +91,8 @@ def render_database(collection, sample_rows: int = 5, format: str = "markdown") 
         rows = collection.get_rows()[:sample_rows] if hasattr(collection, "get_rows") else []
         data = {
             "name": collection.name if hasattr(collection, "name") else "",
+            "block_id": (collection.parent.id if hasattr(collection, "parent") else ""),
+            "data_source_id": collection.id if hasattr(collection, "id") else "",
             "schema": [{"name": p.get("name","?"), "type": p.get("type","?")} for p in schema],
             "sample_rows": [_safe_props(r) for r in rows],
         }
@@ -98,6 +100,13 @@ def render_database(collection, sample_rows: int = 5, format: str = "markdown") 
     name = collection.name if hasattr(collection, "name") else "(unnamed)"
     schema = collection.get_schema_properties() if hasattr(collection, "get_schema_properties") else []
     lines = [f"# {name}", ""]
+    try:
+        lines.append(f"  block id: {collection.parent.id}")
+    except Exception:
+        pass
+    if hasattr(collection, "id"):
+        lines.append(f"  data source id: {collection.id}")
+    lines.append("")
     lines.append("## Columns")
     for prop in schema:
         pname = prop.get("name", "?")
