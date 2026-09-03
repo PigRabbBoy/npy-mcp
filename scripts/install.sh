@@ -27,6 +27,16 @@ say()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m !!\033[0m %s\n' "$*"; }
 die()  { printf '\033[1;31m !!\033[0m %s\n' "$*" >&2; exit 1; }
 
+# read from the user's terminal, not stdin — under `curl … | bash` stdin IS the
+# script text, so a plain `read` would consume script lines as user input
+tty_read() {
+  if [[ -r /dev/tty ]]; then
+    read -r "$@" < /dev/tty
+  else
+    read -r "$@"
+  fi
+}
+
 # ---------------------------------------------------------------- flag parsing
 CLIENTS=()
 TOKEN=""
@@ -65,7 +75,7 @@ ensure_uvx() {
     say "uvx not found — installing uv automatically"
   else
     printf '\033[1;34m==>\033[0m uvx (uv) is not installed. Install it now? [Y/n] '
-    read -r answer
+    tty_read answer
     answer="${answer:-Y}"
     [[ "$answer" =~ ^[Yy] ]] || die "uvx is required. Install it from https://docs.astral.sh/uv/ and re-run."
   fi
@@ -120,7 +130,7 @@ prompt_clients() {
   echo "    3) Cursor              7) Windsurf"
   echo "    4) VS Code             a) all of them"
   printf '    Enter numbers separated by space (e.g. 1 3 4): '
-  read -r picks
+  tty_read picks
   picks="${picks:-a}"
   CLIENTS=()
   if [[ "$picks" =~ ^[Aa]$ ]]; then
@@ -151,7 +161,7 @@ is_dual_scope() {
 prompt_scope() {
   # $1 = client id; sets SCOPE_DECISION for that client (global|project)
   printf '    Scope for %s — [G]lobal (recommended, works everywhere) or [p]roject (.cursor/.mcp in current folder)? ' "$1" >&2
-  read -r s
+  tty_read s
   s="${s:-G}"
   if [[ "$s" =~ ^[Pp] ]]; then
     echo "project"
@@ -170,7 +180,7 @@ prompt_credentials() {
     echo "      2. F12 → Application tab → Cookies → https://app.notion.com"
     echo "      3. Copy the Value of 'token_v2' (starts with v03%3A...)"
     printf '    Paste it here: '
-    read -r TOKEN
+    tty_read TOKEN
     [[ -n "$TOKEN" ]] || die "NOTION_TOKEN_V2 is required."
   fi
   if [[ -z "$SPACE_ID" ]]; then
@@ -184,7 +194,7 @@ prompt_credentials() {
     echo "      • DevTools: F12 → Network → open a Notion page → find api/v3/loadUserContent"
     echo "        → the key under \"space\": {...} is the ID"
     printf '    Paste it here (Enter to skip): '
-    read -r SPACE_ID
+    tty_read SPACE_ID
     fi
   fi
   if [[ -z "$ALLOW_WRITE" ]]; then
@@ -193,7 +203,7 @@ prompt_credentials() {
     else
     echo
     printf '\033[1;34m==>\033[0m Enable write tools (AI can create/edit/delete pages and rows)? [y/N] '
-    read -r aw
+    tty_read aw
     if [[ "$aw" =~ ^[Yy] ]]; then ALLOW_WRITE="1"; else ALLOW_WRITE="0"; fi
     [[ "$ALLOW_WRITE" == "1" ]] \
       && echo "    → write tools ON  (NOTION_ALLOW_WRITE=1)" \

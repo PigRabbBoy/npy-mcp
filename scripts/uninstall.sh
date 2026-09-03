@@ -7,6 +7,15 @@
 # servers in the same config file are left untouched. A .bak-* backup is
 # made before every write.
 
+# read from the user's terminal, not stdin — under `curl … | bash` stdin IS the
+# script text, so a plain `read` would consume script lines as user input
+tty_read() {
+  if [[ -r /dev/tty ]]; then
+    read -r "$@" < /dev/tty
+  else
+    read -r "$@"
+  fi
+}
 set -euo pipefail
 
 say()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
@@ -40,7 +49,7 @@ if [[ ${#CLIENTS[@]} -eq 0 ]]; then
   echo "    3) Cursor              7) Windsurf"
   echo "    4) VS Code             a) all"
   printf '    Numbers (Enter = all): '
-  read -r picks
+  tty_read picks
   picks="${picks:-a}"
   if [[ "$picks" =~ ^[Aa]$ ]]; then
     CLIENTS=("${ALL_IDS[@]}")
