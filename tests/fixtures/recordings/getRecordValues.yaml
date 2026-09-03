@@ -1,6 +1,6 @@
 interactions:
 - request:
-    body: '{"requests": [{"table": "block", "id": "670bd233-7435-4dac-9f60-ba9cdb5a10e4"}]}'
+    body: '{"requests": [{"table": "block", "id": "44444444-4444-4444-8444-444444444444"}]}'
     headers:
       Accept:
       - '*/*'
@@ -72,7 +72,7 @@ interactions:
       x-notion-request-id:
       - d9b0acd4-91cf-4fdd-93fb-f0a0cf91347b
       x-notion-user-id:
-      - 487f0c95-5319-4abf-9b80-5a5255959ce5
+      - 11111111-1111-4111-8111-111111111111
       x-permitted-cross-domain-policies:
       - none
       x-xss-protection:

@@ -57,9 +57,9 @@ class TestClientInit:
 
 class TestGetBlock:
     def test_get_block_from_recording(self, unpy_client_fixture):
-        """loadPageChunk recording has page 670bd233 (Benz)."""
+        """loadPageChunk recording has the shared sample page."""
         with my_vcr.use_cassette("loadPageChunk.yaml"):
-            block = unpy_client_fixture.get_block("670bd233-7435-4dac-9f60-ba9cdb5a10e4")
+            block = unpy_client_fixture.get_block("44444444-4444-4444-8444-444444444444")
         assert block is not None
         assert block.get("type") == "page"
 

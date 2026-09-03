@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **Sanitized vcr test recordings** (`tests/fixtures/recordings/`): the
+  cassettes were captured from a live session with the token already
+  replaced (`FAKE_TOKEN_FOR_TESTS_ONLY`), but still carried personal
+  data — real name, personal email, Google avatar URL, user/space/page
+  UUIDs, and private page titles. All replaced with stable fake values
+  (`Test User`, `test-user@example.com`, `11111111-…`-style IDs, "Sample
+  Project Workspace"). 126 tests still pass. Recordings stay committed
+  (tests replay them offline); `tests/fixtures/recordings/README.md`
+  documents the sanitization policy for future re-records.
+
 ## [1.0.0] - 2026-09-03
 
 ### BREAKING — project renamed: notion-py → **unpy-mcp**

@@ -2,7 +2,7 @@ interactions:
 - request:
     body: '{"collectionId": "308bd4f4-b4de-80a5-9199-efa43e7f3bee", "collectionViewId":
       "", "query": {"aggregate": [], "aggregator": {"aggregation": []}, "filter":
-      [], "sort": [], "search_query": "", "user_state": {"user_id": "487f0c95-5319-4abf-9b80-5a5255959ce5"},
+      [], "sort": [], "search_query": "", "user_state": {"user_id": "11111111-1111-4111-8111-111111111111"},
       "calendar": {"range": {"type": "current_week"}, "from": "calendar_start", "to":
       "calendar_end"}, "show_calendar": false, "loader": {"type": "table", "limit":
       5, "searchQuery": "", "userTimeZone": "Asia/Bangkok", "userLocale": "en", "loadContent":
