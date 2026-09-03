@@ -1,6 +1,6 @@
 # Notion MCP — Full Tool Reference
 
-## Read tools (7 — always available)
+## Read tools (8 — always available)
 
 ### `search`
 
@@ -110,7 +110,47 @@ Query a Notion database and return rows.
 
 ---
 
-## Write tools (16 — gated by `NOTION_ALLOW_WRITE=1`)
+---
+
+### `get_comments`
+
+Read all comment threads attached to a page or block.
+
+| Arg | Type | Default | Description |
+|---|---|---|---|
+| `block_id` | string | — | Page/block URL or ID (required) |
+| `include_resolved` | bool | true | If false, skip resolved (closed) threads |
+
+**Example call:**
+```json
+{"block_id": "44444444-4444-4444-8444-444444444444", "include_resolved": false}
+```
+
+**Returns:** Markdown list of discussions, each with its comments
+(author, text, timestamps, resolved state).
+
+---
+
+### `get_image`
+
+Download an image block and return it as an MCP image content block —
+the client renders it natively as an image (~157 tokens for a typical
+diagram) instead of base64 text (~37k tokens). Notion's image proxy needs
+token_v2 auth, so this fetch happens through the server's session.
+
+| Arg | Type | Default | Description |
+|---|---|---|---|
+| `block_id` | string | — | Image block URL or ID (required) |
+
+**Example call:**
+```json
+{"block_id": "44444444-4444-4444-8444-444444444444"}
+```
+
+**Returns:** MCP ImageContent (rendered as an image by the client).
+On error, a text message (block not found or not an image block).
+
+## Write tools (17 — gated by `NOTION_ALLOW_WRITE=1`)
 
 ### `create_page`
 
@@ -411,6 +451,11 @@ Create a simple table (not a database) with specified dimensions.
 | `rows` | int | 3 | Number of rows |
 | `cols` | int | 2 | Number of columns |
 
+**Example call:**
+```json
+{"parent_id": "44444444-4444-4444-8444-444444444444", "rows": 3, "cols": 3}
+```
+
 **Returns:** Confirmation with created table block ID.
 
 ---
@@ -423,6 +468,11 @@ Create a column layout with N columns.
 |---|---|---|---|
 | `parent_id` | string | — | Parent page URL or ID (required) |
 | `num_columns` | int | 2 | Number of columns (1-10) |
+
+**Example call:**
+```json
+{"parent_id": "44444444-4444-4444-8444-444444444444", "num_columns": 3}
+```
 
 **Returns:** Confirmation with column_list block ID and individual column block IDs.
 
@@ -438,7 +488,38 @@ Import a CSV file as a new database.
 | `file_path` | string | — | Path to CSV file (required) |
 | `title` | string | "" | Database title (defaults to filename) |
 
+**Example call:**
+```json
+{"parent_id": "44444444-4444-4444-8444-444444444444", "file_path": "/tmp/tasks.csv", "title": "Imported Tasks"}
+```
+
 **Returns:** Confirmation with created database block ID and row count.
+
+---
+
+### `add_comment`
+
+Add a comment to a page — starts a new thread, or replies into an
+existing one when `discussion_id` is given.
+
+| Arg | Type | Default | Description |
+|---|---|---|---|
+| `block_id` | string | — | Page/block URL or ID (required) |
+| `text` | string | — | Comment text (required, plain text) |
+| `discussion_id` | string | "" | Existing thread id to reply into (omit = new thread) |
+
+**Example call (new thread):**
+```json
+{"block_id": "44444444-4444-4444-8444-444444444444", "text": "Please review section 2 before Friday"}
+```
+
+**Example call (reply to a thread):**
+```json
+{"block_id": "44444444-4444-4444-8444-444444444444", "text": "Done, left two notes", "discussion_id": "faabf819-a8b9-400e-b2d7-92eb97b4cf3e"}
+```
+
+**Returns:** Confirmation with the new comment id and discussion id.
+On failure, an error message (e.g. invalid thread id).
 
 ---
 
