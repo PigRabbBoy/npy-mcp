@@ -527,3 +527,58 @@ class TestTwoWayRelationOps:
         # op 3: reverse removal on the old target (rowA gone from its list)
         assert submitted[2]["id"] == "rowOld"
         assert "rowA" not in _json.dumps(submitted[2]["args"])
+
+
+# ---- issue #6: duplicate title column ---------------------------------------
+
+
+class TestIssue6TitlePropId:
+    def test_title_column_gets_canonical_prop_id(self):
+        """The first title column must get prop id 'title' — Notion requires a
+        property with that id; when missing the server silently adds its own
+        phantom 'Name' title prop, producing two title columns."""
+        from unpy_mcp.server import _build_collection_schema
+
+        schema = _build_collection_schema(
+            [{"name": "Name", "type": "title"}, {"name": "Route", "type": "text"}]
+        )
+        title_ids = [pid for pid, p in schema.items() if p["type"] == "title"]
+        assert title_ids == ["title"]
+        assert schema["title"]["name"] == "Name"
+        assert len(schema) == 2
+
+    def test_title_with_different_name_still_canonical_id(self):
+        """A title column named anything else (e.g. 'Title') also gets id 'title'."""
+        from unpy_mcp.server import _build_collection_schema
+
+        schema = _build_collection_schema(
+            [{"name": "Title", "type": "title"}, {"name": "Notes", "type": "text"}]
+        )
+        title_ids = [pid for pid, p in schema.items() if p["type"] == "title"]
+        assert title_ids == ["title"]
+        assert schema["title"]["name"] == "Title"
+
+    def test_second_title_column_rejected(self):
+        """Two title columns in one spec list is invalid — the second must raise."""
+        from unpy_mcp.server import _build_collection_schema
+
+        with pytest.raises(ValueError, match="title"):
+            _build_collection_schema(
+                [
+                    {"name": "Name", "type": "title"},
+                    {"name": "Other", "type": "title"},
+                ]
+            )
+
+    def test_non_first_specs_keep_random_ids(self):
+        """Non-title props still get generated 4-char ids, unaffected."""
+        import re
+
+        from unpy_mcp.server import _build_collection_schema
+
+        schema = _build_collection_schema(
+            [{"name": "T", "type": "title"}, {"name": "N", "type": "number"}]
+        )
+        assert schema["title"]["type"] == "title"
+        other = [pid for pid in schema if pid != "title"][0]
+        assert re.fullmatch(r"[0-9a-f]{4}", other)

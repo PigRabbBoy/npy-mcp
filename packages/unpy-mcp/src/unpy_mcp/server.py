@@ -1494,12 +1494,12 @@ def _import_csv_impl(client, parent, file_path: str, title: str = "") -> str:
     schema = {}
     title_prop_id = None
     for i, h in enumerate(headers):
-        prop_id = f"col{i:04x}"
         if title_prop_id is None:
-            schema[prop_id] = {"name": h, "type": "title"}
-            title_prop_id = prop_id
+            # title prop must have id "title" or Notion adds a phantom one (issue #6)
+            schema["title"] = {"name": h, "type": "title"}
+            title_prop_id = "title"
         else:
-            schema[prop_id] = {"name": h, "type": "text"}
+            schema[f"col{i:04x}"] = {"name": h, "type": "text"}
     if title_prop_id is None:
         schema["title"] = {"name": "Name", "type": "title"}
         title_prop_id = "title"
@@ -1548,7 +1548,19 @@ def _build_collection_schema(col_specs: list, client=None, parent_space_id: str 
     for spec in col_specs:
         name = spec.get("name", "Untitled")
         ptype = spec.get("type", "text")
-        prop_id = spec.get("id") or uuid.uuid4().hex[:4]
+        # The first title column MUST get prop id "title" — Notion requires a
+        # property with that id in every collection; when it's missing the
+        # server silently adds its own "Name" title prop, producing two title
+        # columns (issue #6).
+        if ptype == "title":
+            if "title" in schema:
+                raise ValueError(
+                    f"Column '{name}': a database can have only one title "
+                    f"column ('{schema['title']['name']}' is already the title)"
+                )
+            prop_id = "title"
+        else:
+            prop_id = spec.get("id") or uuid.uuid4().hex[:4]
         # stamp so a later pass reuses the same id (two-pass rollup build)
         spec["id"] = prop_id
         prop = {"name": name, "type": ptype}
@@ -2244,7 +2256,14 @@ if _WRITE_ENABLED:
         if collection is None:
             return f"Database not found: {database_id}"
 
-        # Build the new property
+        # Build the new property. A second title column is invalid in Notion —
+        # every collection already has one — so refuse a title here rather
+        # than create a broken schema (issue #6).
+        if type == "title":
+            return (
+                "Error: cannot add a title column — every database already has "
+                "exactly one (rename the existing title column instead)."
+            )
         prop_id = uuid.uuid4().hex[:4]
         prop = {"name": name, "type": type}
         if type in ("select", "multi_select", "status") and options:

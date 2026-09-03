@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`create_database` no longer produces two title columns** when a passed
+  title column is named `Name` (issue #6). Notion requires every collection
+  schema to contain a property with id `title`; the builder used to assign a
+  random id to the user's title column, so the server silently added its own
+  phantom `Name` title beside it. The first title column now always gets the
+  canonical `title` id (name preserved), and a second title column in the
+  spec is rejected with a clear error instead of creating an invalid schema.
+  Same hardening in `import_csv` (title prop id) and `add_column` (refuses
+  `type="title"` with guidance to rename instead).
+
 ### Security
 - **File-reading write tools are confined to a directory** (`unpy-mcp`).
   `import_csv` and `create_media` would open any path the server process
