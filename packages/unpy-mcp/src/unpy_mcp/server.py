@@ -1279,8 +1279,10 @@ def get_database(
                     f"      relation_property: {p.get('relation_property', '?')}"
                 )
                 lines.append(f"      target_property: {p.get('target_property', '?')}")
-                if p.get("aggregation"):
-                    lines.append(f"      aggregation: {p['aggregation']}")
+                # no aggregation field == "show original" (issue #14 round-trip)
+                lines.append(
+                    f"      aggregation: {p.get('aggregation') or 'show_original'}"
+                )
             elif ptype == "formula":
                 try:
                     src, _ = _fev.build_expr(p)
@@ -1611,7 +1613,9 @@ def _build_collection_schema(col_specs: list, client=None, parent_space_id: str 
             create_database).
     Formula specs accept "expression" (Notion formula2 source).
     Rollup specs accept "relation_property" (name), "target_property" (name),
-        and optional "aggregation" (count, sum, percent_checked, latest_date...).
+        and optional "aggregation" (count, show_unique, sum, percent_checked,
+        earliest_date...). "show_original" is accepted and stored the way
+        the Notion UI does (no aggregation field).
     Returns: {prop_id: {"name": str, "type": str, ...}}
     """
     import uuid
@@ -1785,7 +1789,10 @@ def _build_rollup_prop(spec: dict, client) -> dict:
         "target_property_type": target_schema.get(tgt_pid, {}).get("type", "text"),
     }
     agg = spec.get("aggregation")
-    if agg:
+    # "show_original" is how the UI spells "no aggregation" — the schema
+    # stores it by OMITTING the field entirely. Writing the literal string
+    # breaks every Notion client that opens the database (issue #14).
+    if agg and agg not in ("show_original", "original"):
         prop["aggregation"] = agg
     return prop
 

@@ -702,3 +702,61 @@ class TestIssue11ColumnOps:
         assert _find_column(schema, "ab12")[0] == "ab12"
         assert _find_column(schema, "missing") == (None, None)
         assert _find_column(schema, "Gone")[0] is None  # tombstoned skipped
+
+
+# ---- issue #14: show_original rollup breaks Notion views ---------------------
+
+
+class TestIssue14RollupAggregation:
+    def _rollup_spec(self, agg):
+        return {
+            "name": "Rollup",
+            "type": "rollup",
+            "relation_property": "Link",
+            "target_property": "Status",
+            **({"aggregation": agg} if agg is not None else {}),
+        }
+
+    def _build(self, agg):
+        import sys
+
+        sys.path.insert(0, os.path.join(
+            os.path.dirname(__file__), "..", "packages", "unpy-mcp", "src"
+        ))
+        from unittest.mock import patch
+
+        import unpy_mcp.server as srv
+
+        own_schema = {
+            "6404": {"name": "Link", "type": "relation",
+                     "collection_id": "target-col"},
+            "title": {"name": "Name", "type": "title"},
+        }
+        target_schema = {
+            "c358": {"name": "Status", "type": "select"},
+        }
+        spec = self._rollup_spec(agg)
+        spec["_own_schema"] = own_schema
+        with patch.object(srv, "_fetch_schema", return_value=target_schema):
+            return srv._build_rollup_prop(spec, None)
+
+    def test_show_original_omits_aggregation_field(self):
+        """The UI stores 'show original' by OMITTING aggregation — writing
+        the literal string breaks every Notion client (issue #14)."""
+        prop = self._build("show_original")
+        assert "aggregation" not in prop
+        assert prop["rollup_type"] == "relation"
+        assert prop["target_property_type"] == "select"
+
+    def test_alias_original_also_omits(self):
+        prop = self._build("original")
+        assert "aggregation" not in prop
+
+    def test_other_aggregations_kept(self):
+        for agg in ("count", "show_unique", "sum", "earliest_date"):
+            prop = self._build(agg)
+            assert prop["aggregation"] == agg
+
+    def test_no_aggregation_spec_is_show_original(self):
+        prop = self._build(None)
+        assert "aggregation" not in prop
