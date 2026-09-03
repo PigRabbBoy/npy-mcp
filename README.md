@@ -2,6 +2,8 @@
 
 > **unpy** = **un**official Notion **p**ython — a cookie-based client for Notion's internal API.
 
+**Languages:** [English](README.md) | [ไทย](README.TH.md) | [日本語](README.JA.md)
+
 Unofficial Python 3.12+ client for Notion's internal API (v3). Three packages
 in one repo:
 
@@ -222,7 +224,7 @@ Full reference: [`TOOLS.md`](packages/unpy-mcp/skills/unpy-mcp/TOOLS.md)
 Prefer the terminal? Same capabilities, 25 commands:
 
 ```bash
-# install from source (provides the `notion` command)
+# install from source (provides the `unpy` command)
 git clone https://github.com/PigRabbBoy/npy-mcp.git && cd unpy-mcp
 uv sync
 export NOTION_TOKEN_V2="v03%3AeyJ..."
