@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-09-03
+
+### Security
+- **Network writes and downloads now time out.** The export-zip download
+  (`block.py`) and the two file-upload `PUT`s (`block.py`,
+  `collection.py`) had no timeout, so a stalled connection could hang the
+  client (and, over the MCP HTTP server, the worker) indefinitely. They now
+  use explicit timeouts, clearing the only medium-severity bandit findings.
+- **`save_space` escapes its value and writes the config `0600`.** The
+  space id was interpolated straight into TOML and the file kept its default
+  mode; it is now quote/backslash-escaped and restricted to the owner.
+- **The embed.ly API key is overridable** via the `EMBEDLY_KEY` env var
+  (the built-in default is the long-standing public demo key inherited from
+  upstream notion-py, not a secret).
+
 ## [1.0.1] - 2026-09-03
 
 ### Fixed

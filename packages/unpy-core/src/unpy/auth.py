@@ -90,7 +90,12 @@ def resolve_space(space_arg: str | None = None) -> str | None:
 def save_space(space_id: str) -> None:
     """Persist space_id to config file (used by `notion use-space`)."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    CONFIG_FILE.write_text(f'space_id = "{space_id}"\n', encoding="utf-8")
+    escaped = space_id.replace("\\", "\\\\").replace('"', '\\"')
+    CONFIG_FILE.write_text(f'space_id = "{escaped}"\n', encoding="utf-8")
+    try:
+        os.chmod(CONFIG_FILE, 0o600)
+    except OSError:
+        pass
 
 
 def resolve_auth(

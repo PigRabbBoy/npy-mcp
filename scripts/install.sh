@@ -19,7 +19,7 @@
 
 set -euo pipefail
 
-REPO_URL="git+https://github.com/PigRabbBoy/npy-mcp@v1.0.1#subdirectory=packages/unpy-mcp"
+REPO_URL="git+https://github.com/PigRabbBoy/npy-mcp@v1.0.2#subdirectory=packages/unpy-mcp"
 SERVER_ARGS=(--refresh --from "$REPO_URL" unpy-mcp)
 
 # ---------------------------------------------------------------- utilities
@@ -281,7 +281,7 @@ except Exception:
     cfg = {}
 entry = {
     "command": uvx,
-    "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.1#subdirectory=packages/unpy-mcp", "unpy-mcp"],
+    "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.2#subdirectory=packages/unpy-mcp", "unpy-mcp"],
     "env": {"NOTION_TOKEN_V2": token},
 }
 if allow == "1":
@@ -323,7 +323,7 @@ if space:
     env["NOTION_SPACE_ID"] = space
 entry = {
     "command": uvx,
-    "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.1#subdirectory=packages/unpy-mcp", "unpy-mcp"],
+    "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.2#subdirectory=packages/unpy-mcp", "unpy-mcp"],
     "env": env,
 }
 mcp["unpy-mcp"] = entry
@@ -371,7 +371,7 @@ if space:
     env["NOTION_SPACE_ID"] = space
 entry = {
     "type": "local",
-    "command": [uvx, "--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.1#subdirectory=packages/unpy-mcp", "unpy-mcp"],
+    "command": [uvx, "--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.2#subdirectory=packages/unpy-mcp", "unpy-mcp"],
     "environment": env,
     "enabled": True,
 }

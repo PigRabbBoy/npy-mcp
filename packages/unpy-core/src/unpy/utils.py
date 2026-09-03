@@ -1,3 +1,4 @@
+import os
 import requests
 import uuid
 
@@ -40,11 +41,12 @@ def extract_id(url_or_id):
 
 
 def get_embed_data(source_url):
-
+    # embed.ly key is overridable via env; the default is the long-standing
+    # public demo key inherited from upstream notion-py.
+    key = os.environ.get("EMBEDLY_KEY", "421626497c5d4fc2ae6b075189d602a2")
     return requests.get(
-        "https://api.embed.ly/1/oembed?key=421626497c5d4fc2ae6b075189d602a2&url={}".format(
-            source_url
-        )
+        "https://api.embed.ly/1/oembed?key={}&url={}".format(key, source_url),
+        timeout=30,
     ).json()
 
 

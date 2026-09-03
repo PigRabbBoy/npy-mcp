@@ -27,7 +27,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$RepoUrl = "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.1#subdirectory=packages/unpy-mcp"
+$RepoUrl = "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.2#subdirectory=packages/unpy-mcp"
 $ServerArgs = @("--refresh", "--from", $RepoUrl, "unpy-mcp")
 
 function Say($msg)  { Write-Host "==> $msg" -ForegroundColor Cyan }

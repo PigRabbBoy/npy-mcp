@@ -467,7 +467,7 @@ class Block(Record):
 
         zip_url = response["results"][0]["status"]["exportURL"]
 
-        response = self._client.session.get(zip_url)
+        response = self._client.session.get(zip_url, timeout=120)
         response.raise_for_status()
 
         # unzip the contents in memory and read the contents of the file inside (there should only be one file, but check the name)
@@ -721,7 +721,7 @@ class EmbedOrUploadBlock(EmbedBlock):
                 put_headers[h["name"]] = h["value"]
             with open(path, "rb") as f:
                 response = requests.put(
-                    put_url, data=f, headers=put_headers
+                    put_url, data=f, headers=put_headers, timeout=300
                 )
                 response.raise_for_status()
         else:

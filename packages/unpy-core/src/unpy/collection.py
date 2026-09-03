@@ -809,7 +809,7 @@ class CollectionRowBlock(PageBlock):
                         for h in upload.get("putHeaders", []):
                             put_headers[h["name"]] = h["value"]
                         resp = requests.put(
-                            upload["signedPutUrl"], data=f, headers=put_headers
+                            upload["signedPutUrl"], data=f, headers=put_headers, timeout=300
                         )
                         resp.raise_for_status()
                     url = upload["url"]
