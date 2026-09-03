@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-03
+
 ### Fixed
 - **`create_database` no longer produces two title columns** when a passed
   title column is named `Name` (issue #6). Notion requires every collection
