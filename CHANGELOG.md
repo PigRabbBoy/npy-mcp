@@ -4,6 +4,17 @@ All notable changes to unpy-mcp are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-09-08
+
+### Added
+- **The installer pre-checks clients it detects on disk.** The checkbox
+  multi-select now starts with a client checked when its config file
+  already exists (e.g. `~/.claude.json` for Claude Code,
+  `~/.cursor/mcp.json` for Cursor) — whatever you have installed is
+  selected before you touch the keyboard. The hint line reads
+  `● = detected · ↑/↓ move · Space toggle · a all · Enter confirm`.
+  A fresh machine starts with nothing checked.
+
 ## [1.2.1] - 2026-09-08
 
 ### Changed

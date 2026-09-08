@@ -125,6 +125,24 @@ validate_clients() {
   done
 }
 
+detect_installed() {
+  # echoes 1 if the client already has a config on disk (pre-check it)
+  case "$1" in
+    claude-desktop)
+      [[ "$(uname)" == "Darwin" && -f "$HOME/Library/Application Support/Claude/claude_desktop_config.json" ]] \
+        || [[ "$(uname)" != "Darwin" && -f "${XDG_CONFIG_HOME:-$HOME/.config}/Claude/claude_desktop_config.json" ]] ;;
+    claude-code)  [[ -f "$HOME/.claude.json" ]] ;;
+    cursor)       [[ -f "$HOME/.cursor/mcp.json" ]] ;;
+    vscode)
+      [[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/Code/User/mcp.json" ]] \
+        || [[ "$(uname)" == "Darwin" && -f "$HOME/Library/Application Support/Code/User/mcp.json" ]] ;;
+    codex)        [[ -f "$HOME/.codex/config.toml" ]] ;;
+    opencode)     [[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode.json" ]] ;;
+    windsurf)     [[ -f "$HOME/.codeium/windsurf/mcp_config.json" ]] ;;
+    *) return 1 ;;
+  esac
+}
+
 prompt_clients() {
   # Interactive checkbox multi-select: ↑/↓ to move, Space to toggle,
   # a to toggle all, Enter to confirm. Keys are read from /dev/tty so
@@ -138,11 +156,18 @@ prompt_clients() {
   done
   local n=${#ids[@]}
   local checked=()
-  for ((i = 0; i < n; i++)); do checked+=(0); done
+  # pre-check clients that already have a config on disk
+  for ((i = 0; i < n; i++)); do
+    if detect_installed "${ids[$i]}"; then
+      checked+=(1)
+    else
+      checked+=(0)
+    fi
+  done
 
   printf '\n'
   say "Which AI clients should get the Notion MCP server?"
-  printf '    \033[2m↑/↓ move · Space toggle · a all · Enter confirm\033[0m\n'
+  printf '    \033[2m● = detected · ↑/↓ move · Space toggle · a all · Enter confirm\033[0m\n'
 
   if ! exec 3< /dev/tty 2> /dev/null; then
     # no controlling terminal (CI) — default to all
