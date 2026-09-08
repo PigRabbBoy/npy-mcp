@@ -83,6 +83,10 @@ class _FakeBlock:
     def title_plaintext(self):
         return self._title
 
+    @property
+    def title(self):
+        return self._title
+
 
 def test_block_to_markdown_factory_and_link_no_nameerror():
     # Regression: `md` was referenced in the factory / link_to_page branches

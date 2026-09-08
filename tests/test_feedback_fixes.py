@@ -760,3 +760,117 @@ class TestIssue14RollupAggregation:
     def test_no_aggregation_spec_is_show_original(self):
         prop = self._build(None)
         assert "aggregation" not in prop
+
+
+# ---- issue #15: select options need ids --------------------------------------
+
+
+class TestIssue15SelectOptionIds:
+    def test_build_select_options_adds_ids(self):
+        import sys
+
+        sys.path.insert(0, os.path.join(
+            os.path.dirname(__file__), "..", "packages", "unpy-mcp", "src"
+        ))
+        from unpy_mcp.server import _build_select_options
+
+        opts = _build_select_options(["Alpha", "Beta"])
+        assert len(opts) == 2
+        for o in opts:
+            assert o.get("id"), "every option needs an id (issue #15)"
+            assert o["color"] == "default"
+        assert opts[0]["value"] == "Alpha"
+        assert opts[0]["id"] != opts[1]["id"]
+
+    def test_build_select_options_preserves_dicts_and_ids(self):
+        import sys
+
+        sys.path.insert(0, os.path.join(
+            os.path.dirname(__file__), "..", "packages", "unpy-mcp", "src"
+        ))
+        from unpy_mcp.server import _build_select_options
+
+        opts = _build_select_options([
+            {"value": "Keep", "color": "red", "id": "existing-id"},
+            {"value": "Fix", "color": "blue"},
+        ])
+        assert opts[0] == {"value": "Keep", "color": "red", "id": "existing-id"}
+        assert opts[1]["id"] and opts[1]["color"] == "blue"
+
+    def test_schema_builder_uses_ids(self):
+        import sys
+
+        sys.path.insert(0, os.path.join(
+            os.path.dirname(__file__), "..", "packages", "unpy-mcp", "src"
+        ))
+        from unpy_mcp.server import _build_collection_schema
+
+        schema = _build_collection_schema(
+            [{"name": "S", "type": "select", "options": ["Alpha", "Beta"]}]
+        )
+        select = [p for p in schema.values() if p["type"] == "select"][0]
+        assert all(o.get("id") for o in select["options"])
+
+
+# ---- issue #16: inline links in block text -----------------------------------
+
+
+class TestIssue16InlineLinks:
+    def _fake_block(self, markdown_title, plaintext_title):
+        class B:
+            def __init__(self):
+                self._t = markdown_title
+
+            @property
+            def title(self):
+                return self._t
+
+            @property
+            def title_plaintext(self):
+                return plaintext_title
+
+            def get(self, path, default=None):
+                if path == "type":
+                    return "text"
+                if path == "format.page_icon":
+                    return ""
+                return default
+
+            @property
+            def id(self):
+                return "blk1"
+
+        return B()
+
+    def test_markdown_render_keeps_links(self):
+        """_block_to_markdown must use the markdown accessor so inline
+        links survive (issue #16)."""
+        import sys
+
+        sys.path.insert(0, os.path.join(
+            os.path.dirname(__file__), "..", "packages", "unpy-cli", "src"
+        ))
+        from unpy_cli.render import _block_to_markdown
+
+        b = self._fake_block(
+            "[Spacing/ grid](https://figma.example/node)",
+            "Spacing/ grid",
+        )
+        out = _block_to_markdown(b)
+        assert "https://figma.example/node" in out
+
+    def test_json_dict_has_title_markdown(self):
+        import sys
+
+        sys.path.insert(0, os.path.join(
+            os.path.dirname(__file__), "..", "packages", "unpy-cli", "src"
+        ))
+        from unpy_cli.render import _block_to_dict
+
+        b = self._fake_block(
+            "[Spacing/ grid](https://figma.example/node)",
+            "Spacing/ grid",
+        )
+        d = _block_to_dict(b)
+        assert d["title"] == "Spacing/ grid"          # plaintext compat
+        assert d["title_markdown"] == "[Spacing/ grid](https://figma.example/node)"

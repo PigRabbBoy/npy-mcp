@@ -530,7 +530,9 @@ def add_column(
     if collection is None:
         typer.echo(f"Database not found: {database_id}", err=True)
         raise typer.Exit(1)
-    from unpy_mcp.server import _build_relation_prop, _build_rollup_prop, _fev
+    from unpy_mcp.server import (
+        _build_relation_prop, _build_rollup_prop, _build_select_options, _fev,
+    )
 
     import uuid as _uuid
 
@@ -538,7 +540,7 @@ def add_column(
     prop = {"name": name, "type": type}
     if type in ("select", "multi_select", "status") and options:
         prop["options"] = [
-            {"value": o, "color": "default"} for o in json.loads(options)
+            _build_select_options(json.loads(options))
         ]
     if type in ("relation", "formula", "rollup"):
         spec = json.loads(options) if options else {}

@@ -133,9 +133,13 @@ def render_database(collection, sample_rows: int = 5, format: str = "markdown") 
 # ---------------------------------------------------------------------------
 
 def _block_to_markdown(block: Block) -> str:
-    """Convert a single block to markdown text."""
+    """Convert a single block to markdown text.
+
+    Uses the markdown title accessor — title_plaintext strips inline
+    links (issue #16). Code blocks return verbatim text either way.
+    """
     try:
-        md = block.title_plaintext
+        md = block.title
     except Exception:
         md = ""
     btype = block.get("type", "") or ""
@@ -193,7 +197,8 @@ def _page_tree_to_markdown(
 
 
 def _block_summary_markdown(block: Block) -> str:
-    """One-line summary for search results."""
+    """One-line summary for search results. Plaintext is deliberate here:
+    a single line for scanning, not a source of record."""
     btype = block.get("type", "") or "block"
     try:
         title = block.title_plaintext
@@ -213,11 +218,21 @@ def _block_summary_markdown(block: Block) -> str:
 # ---------------------------------------------------------------------------
 
 def _block_to_dict(block: Block) -> dict[str, Any]:
-    """Block to dict for JSON output."""
+    """Block to dict for JSON output.
+
+    title stays plaintext for compat; title_markdown carries inline
+    links/formats for consumers that need them (issue #16).
+    """
+    title_md = None
+    try:
+        title_md = block.title
+    except Exception:
+        title_md = None
     return {
         "id": block.id,
         "type": block.get("type"),
         "title": block.title_plaintext if hasattr(block, "title_plaintext") else None,
+        "title_markdown": title_md,
         "url": block.get_browseable_url() if hasattr(block, "get_browseable_url") else None,
         "icon": block.get("format.page_icon"),
         "alive": block.get("alive"),

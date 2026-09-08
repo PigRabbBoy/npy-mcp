@@ -152,6 +152,7 @@ def _block_summary(block) -> dict:
         "id": block.id,
         "type": btype,
         "title": title,
+        "title_markdown": title_md,
         "url": url,
         "icon": icon,
     }
@@ -777,11 +778,13 @@ def _fetch_image(client, url: str):
 def _block_to_markdown(block) -> str:
     """Convert a single block to markdown text."""
     btype = block.get("type", "") or ""
-    # Plaintext title of the block, used by most text branches below (and by
+    # Markdown title of the block, used by most text branches below (and by
     # the factory / link_to_page markers). Computed up front so those early
-    # branches don't reference it before assignment.
+    # branches don't reference it before assignment. Must be the markdown
+    # accessor — title_plaintext strips inline links (issue #16). Code
+    # blocks return verbatim text either way (their title is markdown=False).
     try:
-        md = block.title_plaintext
+        md = block.title
     except Exception:
         md = ""
     # Image — emit marker with filename and get_image hint
@@ -1097,6 +1100,7 @@ def get_block(block_id: str) -> str:
     btype = block.get("type", "") or ""
     if not md.strip():
         # Non-text block (collection_view_page, column, link_to_page, etc.)
+        # — plaintext is deliberate for a type label
         title = block.title_plaintext if hasattr(block, "title_plaintext") else ""
         if title:
             return f"[{btype}] {title}"
@@ -1601,6 +1605,28 @@ def _find_column(schema: dict, identifier: str):
     return None, None
 
 
+def _build_select_options(values: list) -> list:
+    """Build select/multi_select/status option dicts.
+
+    Notion identifies options by id; without one the UI cannot edit the
+    option's colour (the edit appears to create a new option and revert,
+    issue #15). Values that already carry an id pass through untouched.
+    """
+    import uuid
+
+    out = []
+    for o in values:
+        if isinstance(o, dict):
+            out.append(
+                {**{"id": str(uuid.uuid4()), "color": "default"}, **o}
+                if not o.get("id")
+                else o
+            )
+        else:
+            out.append({"id": str(uuid.uuid4()), "value": o, "color": "default"})
+    return out
+
+
 def _build_collection_schema(col_specs: list, client=None, parent_space_id: str = "") -> dict:
     """Build a Notion collection schema from column specs.
 
@@ -1640,9 +1666,7 @@ def _build_collection_schema(col_specs: list, client=None, parent_space_id: str 
         spec["id"] = prop_id
         prop = {"name": name, "type": ptype}
         if ptype in ("select", "multi_select", "status") and spec.get("options"):
-            prop["options"] = [
-                {"value": o, "color": "default"} for o in spec["options"]
-            ]
+            prop["options"] = _build_select_options(spec["options"])
         if ptype == "relation":
             rel = _build_relation_prop(spec, client, parent_space_id)
             if rel.get("property") and not spec.get("_reverse_prop_id"):
@@ -2363,7 +2387,7 @@ if _WRITE_ENABLED:
         prop = {"name": name, "type": type}
         if type in ("select", "multi_select", "status") and options:
             opts = json.loads(options)
-            prop["options"] = [{"value": o, "color": "default"} for o in opts]
+            prop["options"] = _build_select_options(opts)
         if type in ("relation", "formula", "rollup"):
             # options doubles as the spec JSON for advanced column types
             spec = json.loads(options) if options else {}
