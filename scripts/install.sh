@@ -43,6 +43,7 @@ TOKEN=""
 SPACE_ID=""
 ALLOW_WRITE=""
 SCOPE=""          # global|project — when set via flag, applies to all dual-scope clients
+SKILLS_MODE=""    # "" (ask) | all | none — install the unpy-mcp SKILL into skill-enabled clients
 NONINTERACTIVE=0
 
 while [[ $# -gt 0 ]]; do
@@ -53,6 +54,8 @@ while [[ $# -gt 0 ]]; do
     --allow-write) ALLOW_WRITE="1"; shift ;;
     --no-write)    ALLOW_WRITE="0"; shift ;;
     --scope)       SCOPE="$2"; shift 2 ;;
+    --skills)      SKILLS_MODE="all"; shift ;;
+    --no-skills)   SKILLS_MODE="none"; shift ;;
     -y|--yes)      NONINTERACTIVE=1; shift ;;
     *)             die "Unknown flag: $1 (see header of this script for usage)" ;;
   esac
@@ -440,6 +443,111 @@ for c in "${CLIENTS[@]}"; do
   install_into "$c" "$(scope_for)"
 done
 
+# ---------------------------------------------------------------- 5. agent skill (optional)
+# The SKILL.md teaches an agent HOW to use the MCP tools (tool selection,
+# workflows, safety). Copies the bundled skill into each selected client's
+# skills directory (issue: broaden client support).
+SKILL_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/../packages/unpy-mcp/skills/unpy-mcp"
+[[ -d "$SKILL_SRC" ]] || SKILL_SRC=""
+if [[ -z "$SKILL_SRC" ]]; then
+  # running via `curl | bash` — no repo checkout; fetch the skill files
+  SKILL_TMP="$(mktemp -d)/unpy-mcp"
+  mkdir -p "$SKILL_TMP"
+  base="https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/packages/unpy-mcp/skills/unpy-mcp"
+  if curl -fsSL "$base/SKILL.md" -o "$SKILL_TMP/SKILL.md" 2>/dev/null \
+     && curl -fsSL "$base/TOOLS.md" -o "$SKILL_TMP/TOOLS.md" 2>/dev/null; then
+    SKILL_SRC="$SKILL_TMP"
+  else
+    SKILL_SRC=""   # offline / repo unreachable — skip the skill phase
+  fi
+fi
+
+SKILL_CLIENTS=()
+prompt_skills() {
+  echo
+  say "Also install the unpy-mcp SKILL (agent instructions) into skill-enabled clients?"
+  echo "    These read SKILL.md files so the agent knows which tool to use when."
+  echo "    a) All supported clients (creates <dir>/skills/unpy-mcp/)"
+  echo "    n) Skip — MCP config above is enough"
+  printf '    [a/n]: '
+  tty_read SKILLS_MODE
+  SKILLS_MODE="${SKILLS_MODE:-a}"
+}
+
+if [[ -n "$SKILL_SRC" && -z "$SKILLS_MODE" && $NONINTERACTIVE -eq 0 ]]; then
+  prompt_skills
+fi
+if [[ -n "$SKILL_SRC" && "$SKILLS_MODE" == "a" ]]; then
+  # id|label|dir — dir relative to $HOME (a leading literal "~" is expanded)
+  SKILL_CATALOG=(
+    "aiderdesk|AiderDesk|.aider-desk/skills"
+    "astrbot|AstrBot|data/skills"
+    "autohand|Autohand Code CLI|.autohand/skills"
+    "augment|Augment|.augment/skills"
+    "bob|IBM Bob|.bob/skills"
+    "claude-code|Claude Code|.claude/skills"
+    "openclaw|OpenClaw|skills"
+    "codearts|CodeArts Agent|.codeartsdoer/skills"
+    "codebuddy|CodeBuddy|.codebuddy/skills"
+    "codemaker|Codemaker|.codemaker/skills"
+    "codestudio|Code Studio|.codestudio/skills"
+    "commandcode|Command Code|.commandcode/skills"
+    "continue|Continue|.continue/skills"
+    "cortex|Cortex Code|.cortex/skills"
+    "crush|Crush|.crush/skills"
+    "devin|Devin for Terminal|.devin/skills"
+    "droid|Droid|.factory/skills"
+    "forgecode|ForgeCode|.forge/skills"
+    "goose|Goose|.goose/skills"
+    "grok-build|Grok Build|.grok/skills"
+    "hermes|Hermes Agent|.hermes/skills"
+    "inferencesh|inference.sh|.inferencesh/skills"
+    "jazz|Jazz|.jazz/skills"
+    "junie|Junie|.junie/skills"
+    "iflow|iFlow CLI|.iflow/skills"
+    "kilocode|Kilo Code|.kilocode/skills"
+    "kimchi|Kimchi|.kimchi/skills"
+    "kiro|Kiro CLI|.kiro/skills"
+    "kode|Kode|.kode/skills"
+    "lingma|Lingma|.lingma/skills"
+    "mcpjam|MCPJam|.mcpjam/skills"
+    "minimax|MiniMax Code|.minimax/skills"
+    "mistral-vibe|Mistral Vibe|.vibe/skills"
+    "moxby|Moxby|.moxby/skills"
+    "mux|Mux|.mux/skills"
+    "openhands|OpenHands|.openhands/skills"
+    "ona|Ona|.ona/skills"
+    "pi|Pi|.pi/skills"
+    "posit|Posit Assistant|.posit/assistant/skills"
+    "qoder|Qoder|.qoder/skills"
+    "qwen-code|Qwen Code|.qwen/skills"
+    "reasonix|Reasonix|.reasonix/skills"
+    "rovodev|Rovo Dev|.rovodev/skills"
+    "roo|Roo Code|.roo/skills"
+    "tabnine|Tabnine CLI|.tabnine/agent/skills"
+    "terramind|Terramind|.terramind/skills"
+    "tinycloud|Tinycloud|.tinycloud/skills"
+    "trae|Trae|.trae/skills"
+    "windsurf-skills|Windsurf|.windsurf/skills"
+    "zcode|ZCode|.zcode/skills"
+    "zencoder|Zencoder|.zencoder/skills"
+    "neovate|Neovate|.neovate/skills"
+    "pochi|Pochi|.pochi/skills"
+    "adal|AdaL|.adal/skills"
+    "antigravity|Antigravity|.antigravity/skills"
+    "antigravity-cli|Antigravity CLI|.antigravity/skills"
+    "opencode-skills|opencode|.config/opencode/skills"
+  )
+  for entry in "${SKILL_CATALOG[@]}"; do
+    sdir="${entry##*|}"
+    target="$HOME/$sdir/unpy-mcp"
+    mkdir -p "$target"
+    cp -R "$SKILL_SRC"/. "$target"/
+    SKILL_CLIENTS+=("$target")
+  done
+  say "Skill installed into ${#SKILL_CATALOG[@]} skill directories (~/*/skills/unpy-mcp)"
+fi
+
 # ---------------------------------------------------------------- summary
 echo
 say "Done! Installed into: ${CLIENTS[*]}"
@@ -456,6 +564,12 @@ for c in "${CLIENTS[@]}"; do
   spec="$(client_paths "$c" "$(scope_for)")"
   echo "      ${spec%%|*}"
 done
+[[ ${#SKILL_CLIENTS[@]:-0} -gt 0 ]] || SKILL_CLIENTS=()
+if [[ ${#SKILL_CLIENTS[@]} -gt 0 ]]; then
+  echo
+  echo "  Skill (SKILL.md) installed into:"
+  echo "      ${SKILL_CLIENTS[0]} (+$((${#SKILL_CLIENTS[@]} - 1)) more — same pattern in ~/<dir>/skills/unpy-mcp)"
+fi
 echo
 echo "  To change settings later: re-run this installer (values are updated in place)."
 echo "  To uninstall: curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/uninstall.sh | bash"

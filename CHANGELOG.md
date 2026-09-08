@@ -4,6 +4,28 @@ All notable changes to unpy-mcp are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.2.0] - 2026-09-08
+
+### Added
+- **Installer supports 56 skill-enabled AI clients** (macOS/Linux and
+  Windows). After the MCP config phase the installer can now also copy
+  the bundled `unpy-mcp` skill (`SKILL.md` + `TOOLS.md`) into each
+  client's skills directory — `~/.claude/skills/unpy-mcp/` for Claude
+  Code, `~/.continue/skills/unpy-mcp/` for Continue, and the same
+  pattern for 54 more: AiderDesk, Augment, Crush, Devin, Droid, Goose,
+  Grok Build, Hermes, iFlow, Kilo Code, Kode, OpenHands, Pi, Qwen Code,
+  Roo Code, Tabnine, Trae, Windsurf, Zencoder, Antigravity, opencode,
+  … (full table in the README). Prompt appears interactively; flags
+  `--skills` / `--no-skills` (and `-Skills` / `-NoSkills` on Windows)
+  force it for scripted runs. Under `curl | bash` the skill files are
+  fetched from the repo, so no checkout is needed.
+
+### Changed
+- README documents the full skills-directory table (56 clients) and the
+  installer-first flow; tool reference count corrected to 27.
+
 ## [1.1.3] - 2026-09-07
 
 ### Fixed

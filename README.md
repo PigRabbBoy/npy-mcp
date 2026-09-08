@@ -60,6 +60,10 @@ The installer asks:
 3. **`NOTION_SPACE_ID`** — optional; shown how to find it if you're in
    multiple workspaces
 4. **Write tools?** — opt-in (`NOTION_ALLOW_WRITE`), default read-only
+5. **Install the agent skill?** — optional; copies `SKILL.md` into 56
+   skill-enabled clients (Claude Code, Continue, Goose, Crush, OpenHands,
+   Devin, Droid, AiderDesk, Windsurf, … — the full table is
+   [below](#ai-skills))
 
 Then fully restart your AI client and ask:
 > "Find pages about project status in Notion" — that's it.
@@ -397,22 +401,65 @@ row.Done = True
 
 ---
 
-## AI skills for agents
+## AI skills for agents {#ai-skills}
 
 Ship-ready skills so your agent knows which tool to use when:
 
-```bash
-# unpy-mcp skill: tool selection, workflows, write safety
-cp -r packages/unpy-mcp/skills/unpy-mcp ~/.claude/skills/unpy-mcp   # Claude Code
-cp -r packages/unpy-mcp/skills/unpy-mcp ~/.config/opencode/skills/    # opencode
-# (same pattern for ~/.agents/skills/)
+- `SKILL.md` — when to use which tool, common workflows, write safety rules
+- `TOOLS.md` — full 27-tool reference (args, types, examples, error messages)
 
-# release skill: versioning, changelog, tagging
-cp -r packages/unpy-mcp/skills/release ~/.claude/skills/release
+The installer can copy the skill into every supported client in one step
+(answer **a** at the skill prompt, or run with `--skills`; `--no-skills`
+skips it):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/install.sh | bash
+# → "Also install the unpy-mcp SKILL … ?" → a
 ```
 
-- `SKILL.md` — when to use which tool, common workflows, write safety rules
-- `TOOLS.md` — full 25-tool reference (args, types, examples, error messages)
+Manual copy works too — every client follows the same pattern
+(`<skills-dir>/unpy-mcp/`):
+
+```bash
+cp -r packages/unpy-mcp/skills/unpy-mcp ~/.claude/skills/unpy-mcp   # Claude Code
+```
+
+**Supported skill directories** (relative to `$HOME`; same list the
+installer uses):
+
+| Client | Skills dir | Client | Skills dir |
+|---|---|---|---|
+| AiderDesk | `.aider-desk/skills` | Kode | `.kode/skills` |
+| AstrBot | `data/skills` | Lingma | `.lingma/skills` |
+| Autohand Code CLI | `.autohand/skills` | MCPJam | `.mcpjam/skills` |
+| Augment | `.augment/skills` | MiniMax Code | `.minimax/skills` |
+| IBM Bob | `.bob/skills` | Mistral Vibe | `.vibe/skills` |
+| Claude Code | `.claude/skills` | Moxby | `.moxby/skills` |
+| OpenClaw | `skills` | Mux | `.mux/skills` |
+| CodeArts Agent | `.codeartsdoer/skills` | OpenHands | `.openhands/skills` |
+| CodeBuddy | `.codebuddy/skills` | Ona | `.ona/skills` |
+| Codemaker | `.codemaker/skills` | Pi | `.pi/skills` |
+| Code Studio | `.codestudio/skills` | Posit Assistant | `.posit/assistant/skills` |
+| Command Code | `.commandcode/skills` | Qoder | `.qoder/skills` |
+| Continue | `.continue/skills` | Qwen Code | `.qwen/skills` |
+| Cortex Code | `.cortex/skills` | Reasonix | `.reasonix/skills` |
+| Crush | `.crush/skills` | Rovo Dev | `.rovodev/skills` |
+| Devin for Terminal | `.devin/skills` | Roo Code | `.roo/skills` |
+| Droid | `.factory/skills` | Tabnine CLI | `.tabnine/agent/skills` |
+| ForgeCode | `.forge/skills` | Terramind | `.terramind/skills` |
+| Goose | `.goose/skills` | Tinycloud | `.tinycloud/skills` |
+| Grok Build | `.grok/skills` | Trae | `.trae/skills` |
+| Hermes Agent | `.hermes/skills` | Windsurf | `.windsurf/skills` |
+| inference.sh | `.inferencesh/skills` | ZCode | `.zcode/skills` |
+| Jazz | `.jazz/skills` | Zencoder | `.zencoder/skills` |
+| Junie | `.junie/skills` | Neovate | `.neovate/skills` |
+| iFlow CLI | `.iflow/skills` | Pochi | `.pochi/skills` |
+| Kilo Code | `.kilocode/skills` | AdaL | `.adal/skills` |
+| Kimchi | `.kimchi/skills` | Antigravity / CLI | `.antigravity/skills` |
+| Kiro CLI | `.kiro/skills` | opencode | `.config/opencode/skills` |
+
+# release skill: versioning, changelog, tagging (repo contributors)
+cp -r packages/unpy-mcp/skills/release ~/.claude/skills/release
 
 ---
 

@@ -23,7 +23,9 @@ param(
   [switch]$NoWrite,
   [ValidateSet("global", "project", "")]
   [string]$Scope = "",
-  [switch]$Yes
+  [switch]$Yes,
+  [switch]$Skills,
+  [switch]$NoSkills
 )
 
 $ErrorActionPreference = "Stop"
@@ -354,6 +356,72 @@ foreach ($c in $Clients) {
   $edited += Install-Into $c $scopeMap[$c]
 }
 
+# ---------------------------------------------------------------- 5. agent skill (optional)
+$skillDirs = @{
+  "AiderDesk" = ".aider-desk/skills"; "AstrBot" = "data/skills";
+  "Autohand Code CLI" = ".autohand/skills"; "Augment" = ".augment/skills";
+  "IBM Bob" = ".bob/skills"; "Claude Code" = ".claude/skills";
+  "OpenClaw" = "skills"; "CodeArts Agent" = ".codeartsdoer/skills";
+  "CodeBuddy" = ".codebuddy/skills"; "Codemaker" = ".codemaker/skills";
+  "Code Studio" = ".codestudio/skills"; "Command Code" = ".commandcode/skills";
+  "Continue" = ".continue/skills"; "Cortex Code" = ".cortex/skills";
+  "Crush" = ".crush/skills"; "Devin for Terminal" = ".devin/skills";
+  "Droid" = ".factory/skills"; "ForgeCode" = ".forge/skills";
+  "Goose" = ".goose/skills"; "Grok Build" = ".grok/skills";
+  "Hermes Agent" = ".hermes/skills"; "inference.sh" = ".inferencesh/skills";
+  "Jazz" = ".jazz/skills"; "Junie" = ".junie/skills";
+  "iFlow CLI" = ".iflow/skills"; "Kilo Code" = ".kilocode/skills";
+  "Kimchi" = ".kimchi/skills"; "Kiro CLI" = ".kiro/skills";
+  "Kode" = ".kode/skills"; "Lingma" = ".lingma/skills";
+  "MCPJam" = ".mcpjam/skills"; "MiniMax Code" = ".minimax/skills";
+  "Mistral Vibe" = ".vibe/skills"; "Moxby" = ".moxby/skills";
+  "Mux" = ".mux/skills"; "OpenHands" = ".openhands/skills";
+  "Ona" = ".ona/skills"; "Pi" = ".pi/skills";
+  "Posit Assistant" = ".posit/assistant/skills"; "Qoder" = ".qoder/skills";
+  "Qwen Code" = ".qwen/skills"; "Reasonix" = ".reasonix/skills";
+  "Rovo Dev" = ".rovodev/skills"; "Roo Code" = ".roo/skills";
+  "Tabnine CLI" = ".tabnine/agent/skills"; "Terramind" = ".terramind/skills";
+  "Tinycloud" = ".tinycloud/skills"; "Trae" = ".trae/skills";
+  "Windsurf" = ".windsurf/skills"; "ZCode" = ".zcode/skills";
+  "Zencoder" = ".zencoder/skills"; "Neovate" = ".neovate/skills";
+  "Pochi" = ".pochi/skills"; "AdaL" = ".adal/skills";
+  "Antigravity" = ".antigravity/skills";
+  "opencode" = ".config/opencode/skills";
+}
+$skillTargets = @()
+if (-not $NoSkills) {
+  $skillSrc = Join-Path $PSScriptRoot "..\packages\unpy-mcp\skills\unpy-mcp"
+  $haveLocal = Test-Path $skillSrc
+  if (-not $haveLocal) {
+    $skillSrc = Join-Path ([System.IO.Path]::GetTempPath()) "unpy-mcp-skill"
+    New-Item -ItemType Directory -Force -Path $skillSrc | Out-Null
+    $base = "https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/packages/unpy-mcp/skills/unpy-mcp"
+    try {
+      Invoke-WebRequest "$base/SKILL.md" -OutFile (Join-Path $skillSrc "SKILL.md")
+      Invoke-WebRequest "$base/TOOLS.md" -OutFile (Join-Path $skillSrc "TOOLS.md")
+      $haveLocal = $true
+    } catch { $haveLocal = $false }
+  }
+  if ($haveLocal -and -not $NoSkills) {
+    if (-not $Skills -and -not $nonInteractive) {
+      Write-Host ""
+      Say "Also install the unpy-mcp SKILL (agent instructions) into skill-enabled clients?"
+      Write-Host "    a) All supported clients  n) Skip  [a/n]: " -NoNewline
+      $answer = Read-Host
+      $Skills = ($answer -eq "" -or $answer -match '^[Aa]')
+    }
+    if ($Skills) {
+      foreach ($label in $skillDirs.Keys) {
+        $target = Join-Path $HOME (Join-Path $skillDirs[$label] "unpy-mcp")
+        New-Item -ItemType Directory -Force -Path $target | Out-Null
+        Copy-Item -Path (Join-Path $skillSrc "*") -Destination $target -Force
+        $skillTargets += $target
+      }
+      Say "Skill installed into $($skillDirs.Count) skill directories (~\<dir>\skills\unpy-mcp)"
+    }
+  }
+}
+
 # ---------------------------------------------------------------- summary
 Write-Host ""
 Say "Done! Installed into: $($Clients -join ', ')"
@@ -367,6 +435,11 @@ Write-Host "    2. Test: ask your AI  ->  'search Notion for pages about project
 Write-Host ""
 Write-Host "  Config files edited (backups saved as <file>.bak-*):"
 foreach ($p in $edited) { Write-Host "      $p" }
+if ($skillTargets.Count -gt 0) {
+  Write-Host ""
+  Write-Host "  Skill (SKILL.md) installed into:"
+  Write-Host "      $($skillTargets[0]) (+$($skillTargets.Count - 1) more — ~\<dir>\skills\unpy-mcp)"
+}
 Write-Host ""
 Write-Host "  To change settings later: re-run this installer (values are updated in place)."
 Write-Host "  To uninstall: irm https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/uninstall.ps1 | iex"
