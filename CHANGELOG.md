@@ -4,6 +4,61 @@ All notable changes to unpy-mcp are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2026-09-07
+
+### Fixed
+- **`select` / `multi_select` / `status` options now carry an `id`**
+  (issue #15). Notion identifies options by id; options created without
+  one could not have their colour edited from the Notion UI (the edit
+  appeared to create a new option and instantly revert). All three
+  option-building sites — `create_database` columns, `add_column`, and
+  the CLI's `add-column` — now mint a uuid per option (or pass through
+  dicts that already have one). Row data is unaffected: rows store the
+  option's string, not its id, so existing schemas can be repaired by
+  rewriting `schema.<prop_id>.options` with ids added.
+
+- **Block text keeps inline links** (issue #16). Both front ends read
+  `title_plaintext` where the markdown `title` accessor was needed, so a
+  paragraph that is a hyperlink came back as bare text with no field
+  carrying the href — while the same text in a database *property*
+  kept its link. Markdown paths (`get_page`, `get_block`, CLI
+  `get-page`/`get-block`) now render `[text](url)`; JSON paths
+  (`--format json`, `_block_summary`) keep the plaintext `title` for
+  compatibility and add `title_markdown` alongside it so consumers can
+  recover links. One-line search summaries stay plaintext deliberately.
+
+## [1.1.2] - 2026-09-03
+
+### Fixed
+- **`aggregation: "show_original"` no longer breaks the Notion view**
+  (issue #14, severe). Notion's schema stores "show original" by
+  **omitting** the `aggregation` field entirely — captured live from the
+  UI's `CollectionSettingsProperty.handleRollupPropertyMenuChange`. The
+  builder wrote the literal string, which every Notion client rejects:
+  the database page fails with "Something went wrong" and related rows
+  show "an error has occurred in the property group", while every MCP
+  read still reported success. `show_original` (and `original`) now
+  serialize to no field; all other aggregations are unchanged.
+  `get_database(full_schema)` displays the absent field as
+  `aggregation: show_original` so provisioning diffs round-trip.
+  Existing broken properties can be repaired through the MCP by
+  rewriting the rollup — both repro databases from the issue were
+  repaired live during verification.
+
+## [1.1.1] - 2026-09-03
+
+### Added
+- **CLI catches up with the v1.1.0 MCP tools** (`unpy-cli`):
+  - `rename-column` and `delete-column` commands (same semantics as the
+    MCP tools — delete mirrors Notion's own two-op flow).
+  - `create-page --blocks` creates the page with content in one step and
+    the command returns `Created page <id> — <url>`.
+  - `append-blocks` supports the full block set (subheader, subsubheader,
+    toggle, equation) and the code `language` field, via the same shared
+    helper the MCP server uses.
+  - `get-database` reports `block id` and `data source id` in both
+    markdown and `--format json` output (issue #9 parity).
+
 ## [1.1.0] - 2026-09-03
 
 ### Added
