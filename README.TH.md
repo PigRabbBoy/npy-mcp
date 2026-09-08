@@ -400,18 +400,22 @@ row.Done = True
 
 Skill พร้อมใช้ ช่วยให้ agent รู้ว่าควรใช้ tool ไหนเมื่อไหร่:
 
-```bash
-# unpy-mcp skill: การเลือก tool, workflow, ความปลอดภัยด้านการเขียน
-cp -r packages/unpy-mcp/skills/unpy-mcp ~/.claude/skills/unpy-mcp   # Claude Code
-cp -r packages/unpy-mcp/skills/unpy-mcp ~/.config/opencode/skills/    # opencode
-# (รูปแบบเดียวกันกับ ~/.agents/skills/)
+- `SKILL.md` — tool ไหนใช้เมื่อไหร่, workflow ที่พบบ่อย, กติกาความปลอดภัย
+- `TOOLS.md` — คู่มือเต็ม 27 tools (args, types, ตัวอย่าง, error messages)
 
-# release skill: จัดการเวอร์ชัน, changelog, tag
+Installer สามารถ copy skill ให้ client ที่รองรับ skills ถึง 56 ตัวในครั้งเดียว
+(Claude Code, Continue, Goose, Crush, OpenHands, Devin, Droid, AiderDesk,
+Windsurf ฯลฯ) — ตอบ `a` ที่ prompt หรือใช้ flag `--skills`
+รายการ directory ทั้งหมดดูที่ [README ภาษาอังกฤษ](README.md#ai-skills)
+
+Copy  manual ก็ทำได้ รูปแบบเดียวกันทุก client (`<skills-dir>/unpy-mcp/`):
+
+```bash
+cp -r packages/unpy-mcp/skills/unpy-mcp ~/.claude/skills/unpy-mcp   # Claude Code
+
+# release skill: จัดการเวอร์ชัน, changelog, tag (สำหรับคน dev ใน repo)
 cp -r packages/unpy-mcp/skills/release ~/.claude/skills/release
 ```
-
-- `SKILL.md` — tool ไหนใช้เมื่อไหร่, workflow ที่พบบ่อย, กติกาความปลอดภัย
-- `TOOLS.md` — คู่มือเต็ม 25 tools (args, types, ตัวอย่าง, error messages)
 
 ---
 

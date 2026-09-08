@@ -401,18 +401,22 @@ row.Done = True
 
 エージェントがどのツールをいつ使うべきか分かる、すぐに使えるスキル：
 
-```bash
-# unpy-mcp スキル：ツール選択、ワークフロー、書き込みの安全規則
-cp -r packages/unpy-mcp/skills/unpy-mcp ~/.claude/skills/unpy-mcp   # Claude Code
-cp -r packages/unpy-mcp/skills/unpy-mcp ~/.config/opencode/skills/    # opencode
-# （~/.agents/skills/ も同様）
+- `SKILL.md` — どのツールをいつ使うか、よくあるワークフロー、書き込みの安全規則
+- `TOOLS.md` — 27 ツールの完全リファレンス（引数、型、例、エラーメッセージ）
 
-# release スキル：バージョニング、changelog、タグ付け
+インストーラーは 56 のスキル対応クライアント（Claude Code、Continue、Goose、
+Crush、OpenHands、Devin、Droid、AiderDesk、Windsurf など）にスキルを一括コピー
+できます。プロンプトで `a` を選ぶか、`--skills` フラグを使用してください。
+対応ディレクトリの完全な一覧は [英語版 README](README.md#ai-skills) を参照。
+
+手動コピーも同じパターンです（`<skills-dir>/unpy-mcp/`）：
+
+```bash
+cp -r packages/unpy-mcp/skills/unpy-mcp ~/.claude/skills/unpy-mcp   # Claude Code
+
+# release スキル：バージョニング、changelog、タグ付け（リポジトリ開発者向け）
 cp -r packages/unpy-mcp/skills/release ~/.claude/skills/release
 ```
-
-- `SKILL.md` — どのツールをいつ使うか、よくあるワークフロー、書き込みの安全規則
-- `TOOLS.md` — 25 ツールの完全リファレンス（引数、型、例、エラーメッセージ）
 
 ---
 
