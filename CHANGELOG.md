@@ -4,7 +4,17 @@ All notable changes to unpy-mcp are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.1] - 2026-09-08
+
+### Changed
+- **Client selection is now an interactive checkbox multi-select** in both
+  the installer and uninstaller (macOS/Linux): `↑`/`↓` move, `Space`
+  toggles, `a` toggles all, `Enter` confirms — replacing the
+  "enter numbers separated by space" prompt. Keys are read from
+  `/dev/tty` so it works under `curl | bash`; without a controlling
+  terminal the installer defaults to all clients and the uninstaller
+  falls back to typed numbers. The uninstaller's list now starts
+  all-checked (Enter = remove from all), matching its old default.
 
 ## [1.2.0] - 2026-09-08
 

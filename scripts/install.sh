@@ -126,29 +126,68 @@ validate_clients() {
 }
 
 prompt_clients() {
-  echo
+  # Interactive checkbox multi-select: ↑/↓ to move, Space to toggle,
+  # a to toggle all, Enter to confirm. Keys are read from /dev/tty so
+  # this works under `curl | bash`. Falls back to typed numbers when
+  # the terminal does not support raw reads.
+  local labels=() ids=() i cursor=0 n key k2 k3 any
+  for entry in "${CLIENT_CATALOG[@]}"; do
+    ids+=("${entry%%|*}")
+    local rest="${entry#*|}"
+    labels+=("${rest%%|*}")
+  done
+  local n=${#ids[@]}
+  local checked=()
+  for ((i = 0; i < n; i++)); do checked+=(0); done
+
+  printf '\n'
   say "Which AI clients should get the Notion MCP server?"
-  echo "    1) Claude Desktop      5) Codex CLI"
-  echo "    2) Claude Code         6) opencode"
-  echo "    3) Cursor              7) Windsurf"
-  echo "    4) VS Code             a) all of them"
-  printf '    Enter numbers separated by space (e.g. 1 3 4): '
-  tty_read picks
-  picks="${picks:-a}"
-  CLIENTS=()
-  if [[ "$picks" =~ ^[Aa]$ ]]; then
+  printf '    \033[2m↑/↓ move · Space toggle · a all · Enter confirm\033[0m\n'
+
+  if ! exec 3< /dev/tty 2> /dev/null; then
+    # no controlling terminal (CI) — default to all
     CLIENTS=("${ALL_IDS[@]}")
-  else
-    for p in $picks; do
-      case "$p" in
-        1) CLIENTS+=("claude-desktop") ;; 2) CLIENTS+=("claude-code") ;;
-        3) CLIENTS+=("cursor") ;;        4) CLIENTS+=("vscode") ;;
-        5) CLIENTS+=("codex") ;;         6) CLIENTS+=("opencode") ;;
-        7) CLIENTS+=("windsurf") ;;      *) warn "Ignoring '$p' (1-7 or a)" ;;
-      esac
-    done
-    [[ ${#CLIENTS[@]} -gt 0 ]] || die "No client selected."
+    return
   fi
+
+  printf '\033[?25l'
+  local first_draw=1
+  while :; do
+    (( first_draw )) || printf '\033[%dA' "$((n + 1))"
+    first_draw=0
+    for ((i = 0; i < n; i++)); do
+      local mark="○" marker="  "
+      [[ ${checked[$i]} -eq 1 ]] && mark="●"
+      [[ $i -eq $cursor ]] && marker="❯ "
+      printf '  %s %s %s\033[K\n' "$marker" "$mark" "${labels[$i]}"
+    done
+    printf '    a) toggle all   Enter) confirm\033[K'
+    IFS= read -rsn1 key <&3 || key=""
+    if [[ $key == $'\x1b' ]]; then
+      read -rsn1 k2 <&3 || k2=""
+      read -rsn1 k3 <&3 || k3=""
+      case "$k2$k3" in
+        "[A") ((cursor > 0)) && cursor=$((cursor - 1)) ;;
+        "[B") ((cursor < n - 1)) && cursor=$((cursor + 1)) ;;
+      esac
+    elif [[ $key == " " ]]; then
+      if [[ ${checked[$cursor]} -eq 1 ]]; then checked[$cursor]=0; else checked[$cursor]=1; fi
+    elif [[ $key == "a" || $key == "A" ]]; then
+      any=0
+      for ((i = 0; i < n; i++)); do [[ ${checked[$i]} -eq 0 ]] && any=1; done
+      for ((i = 0; i < n; i++)); do checked[$i]=$any; done
+    elif [[ -z $key ]]; then
+      break
+    fi
+  done
+  exec 3<&-
+  printf '\033[?25h\n'
+
+  CLIENTS=()
+  for ((i = 0; i < n; i++)); do
+    [[ ${checked[$i]} -eq 1 ]] && CLIENTS+=("${ids[$i]}")
+  done
+  [[ ${#CLIENTS[@]} -gt 0 ]] || die "No client selected."
 }
 
 is_dual_scope() {

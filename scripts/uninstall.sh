@@ -42,27 +42,76 @@ ALL_IDS=()
 for c in "${CLIENT_CATALOG[@]}"; do ALL_IDS+=("${c%%|*}"); done
 
 if [[ ${#CLIENTS[@]} -eq 0 ]]; then
-  echo
+  # checkbox multiselect — same UX as the installer (↑/↓ move, Space toggle,
+  # a all, Enter confirm; Enter with nothing selected = all)
+  labels=() i cursor=0 key k2 k3 any
+  for entry in "${CLIENT_CATALOG[@]}"; do
+    rest="${entry#*|}"
+    labels+=("$rest")
+  done
+  n=${#labels[@]}
+  checked=()
+  for ((i = 0; i < n; i++)); do checked+=(1); done   # default: all checked
+
+  printf '\n'
   say "Remove the Notion MCP server from which clients?"
-  echo "    1) Claude Desktop      5) Codex CLI"
-  echo "    2) Claude Code         6) opencode"
-  echo "    3) Cursor              7) Windsurf"
-  echo "    4) VS Code             a) all"
-  printf '    Numbers (Enter = all): '
-  tty_read picks
-  picks="${picks:-a}"
-  if [[ "$picks" =~ ^[Aa]$ ]]; then
-    CLIENTS=("${ALL_IDS[@]}")
-  else
-    for p in $picks; do
-      case "$p" in
-        1) CLIENTS+=("claude-desktop") ;; 2) CLIENTS+=("claude-code") ;;
-        3) CLIENTS+=("cursor") ;;        4) CLIENTS+=("vscode") ;;
-        5) CLIENTS+=("codex") ;;         6) CLIENTS+=("opencode") ;;
-        7) CLIENTS+=("windsurf") ;;
-      esac
+  printf '    \033[2m↑/↓ move · Space toggle · a all · Enter confirm\033[0m\n'
+
+  if exec 3< /dev/tty 2> /dev/null; then
+    printf '\033[?25l'
+    first_draw=1
+    while :; do
+      (( first_draw )) || printf '\033[%dA' "$((n + 1))"
+      first_draw=0
+      for ((i = 0; i < n; i++)); do
+        mark="○"; marker="  "
+        [[ ${checked[$i]} -eq 1 ]] && mark="●"
+        [[ $i -eq $cursor ]] && marker="❯ "
+        printf '  %s %s %s\033[K\n' "$marker" "$mark" "${labels[$i]}"
+      done
+      printf '    a) toggle all   Enter) confirm\033[K'
+      IFS= read -rsn1 key <&3 || key=""
+      if [[ $key == $'\x1b' ]]; then
+        read -rsn1 k2 <&3 || k2=""
+        read -rsn1 k3 <&3 || k3=""
+        case "$k2$k3" in
+          "[A") ((cursor > 0)) && cursor=$((cursor - 1)) ;;
+          "[B") ((cursor < n - 1)) && cursor=$((cursor + 1)) ;;
+        esac
+      elif [[ $key == " " ]]; then
+        if [[ ${checked[$cursor]} -eq 1 ]]; then checked[$cursor]=0; else checked[$cursor]=1; fi
+      elif [[ $key == "a" || $key == "A" ]]; then
+        any=0
+        for ((i = 0; i < n; i++)); do [[ ${checked[$i]} -eq 0 ]] && any=1; done
+        for ((i = 0; i < n; i++)); do checked[$i]=$any; done
+      elif [[ -z $key ]]; then
+        break
+      fi
     done
+    exec 3<&-
+    printf '\033[?25h\n'
+  else
+    tty_read picks
+    picks="${picks:-a}"
+    if [[ "$picks" =~ ^[Aa]$ ]]; then
+      checked=()
+      for ((i = 0; i < n; i++)); do checked+=(1); done
+    else
+      checked=()
+      for ((i = 0; i < n; i++)); do checked+=(0); done
+      for p in $picks; do
+        case "$p" in
+          1) checked[0]=1 ;; 2) checked[1]=1 ;; 3) checked[2]=1 ;; 4) checked[3]=1 ;;
+          5) checked[4]=1 ;; 6) checked[5]=1 ;; 7) checked[6]=1 ;;
+        esac
+      done
+    fi
   fi
+
+  CLIENTS=()
+  for ((i = 0; i < n; i++)); do
+    [[ ${checked[$i]} -eq 1 ]] && CLIENTS+=("${ALL_IDS[$i]}")
+  done
 fi
 [[ ${#CLIENTS[@]} -gt 0 ]] || die "No client selected."
 
