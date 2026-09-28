@@ -522,10 +522,22 @@ class NotionClient(object):
                     endpoint, json.dumps(data, indent=2)
                 )
             )
+            try:
+                error_data = response.json()
+            except ValueError:
+                error_data = {}
+            # Surface the real cause: Notion's generic "message" hides the
+            # specific validation error in "debugMessage" / "name" (e.g.
+            # unsaved_transactions with the actual ValidationError text)
+            parts = [
+                error_data.get(key)
+                for key in ("message", "name", "debugMessage")
+                if error_data.get(key)
+            ]
             raise HTTPError(
-                response.json().get(
-                    "message", "There was an error (400) submitting the request."
-                )
+                " | ".join(parts)
+                if parts
+                else "There was an error (400) submitting the request."
             )
         response.raise_for_status()
         return response

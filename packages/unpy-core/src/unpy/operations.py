@@ -13,6 +13,28 @@ def build_operation(id, path, args, command="set", table="block"):
     return {"id": id, "path": path, "args": args, "command": command, "table": table}
 
 
+def build_block_property_update(block_id, prop_id, value):
+    """
+    Build an operation that sets one property value on a block (a database
+    row).
+
+    Notion's server rejects plain "set" commands against the
+    ["properties", <prop_id>] path on rows (400: "Block property value
+    updates must use high-level property operations" — rows now carry
+    crdt_format_version 1). This mirrors what the Notion web client sends
+    for row property edits (captured live, userAction
+    Text.handleMutation): the dedicated "updateBlockPropertyValue" command
+    with the new value wrapped in a "primitiveOp".
+    """
+    return {
+        "id": block_id,
+        "path": ["properties", prop_id],
+        "table": "block",
+        "command": "updateBlockPropertyValue",
+        "args": {"primitiveOp": {"command": "set", "args": value}},
+    }
+
+
 def build_collection_schema_update(collection_id, prop_id, prop_args):
     """
     Build an operation that updates one property in a collection's schema.

@@ -503,14 +503,10 @@ class TestTwoWayRelationOps:
         row = CollectionRowBlock.__new__(CollectionRowBlock)
         object.__setattr__(row, "_client", client)
         object.__setattr__(row, "_id", "rowA")
-        object.__setattr__(
-            row,
-            "get",
-            lambda path, default=None, force_refresh=False: (
-                [["‣", [["p", "rowOld"]]], [","]]
-                if path == ["properties", "fwd1"]
-                else default
-            ),
+        row.__dict__["get"] = lambda path, default=None, force_refresh=False: (
+            [["‣", [["p", "rowOld"]]], [","]]
+            if path == ["properties", "fwd1"]
+            else default
         )
 
         prop = {"id": "fwd1", "type": "relation", "property": "rev1"}
@@ -518,15 +514,20 @@ class TestTwoWayRelationOps:
         row._sync_two_way_relation(prop, new_val)
 
         assert len(submitted) == 3
-        # op 1: forward write on self
+        # op 1: forward write on self (high-level property op + primitiveOp wrap)
         assert submitted[0]["id"] == "rowA"
         assert submitted[0]["path"] == ["properties", "fwd1"]
+        assert submitted[0]["command"] == "updateBlockPropertyValue"
         # op 2: reverse add on the new target
         assert submitted[1]["id"] == "rowNew"
-        assert ["‣", [["p", "rowA"]]] in submitted[1]["args"]
+        assert submitted[1]["command"] == "updateBlockPropertyValue"
+        assert ["‣", [["p", "rowA"]]] in submitted[1]["args"]["primitiveOp"]["args"]
         # op 3: reverse removal on the old target (rowA gone from its list)
         assert submitted[2]["id"] == "rowOld"
-        assert "rowA" not in _json.dumps(submitted[2]["args"])
+        assert submitted[2]["command"] == "updateBlockPropertyValue"
+        assert (
+            "rowA" not in _json.dumps(submitted[2]["args"]["primitiveOp"]["args"])
+        )
 
 
 # ---- issue #6: duplicate title column ---------------------------------------
@@ -874,3 +875,122 @@ class TestIssue16InlineLinks:
         d = _block_to_dict(b)
         assert d["title"] == "Spacing/ grid"          # plaintext compat
         assert d["title_markdown"] == "[Spacing/ grid](https://figma.example/node)"
+
+
+# ---- issue #17: high-level property operations --------------------------------
+
+
+class TestIssue17HighLevelPropertyOps:
+    def test_build_block_property_update_shape(self):
+        """Row property writes must use updateBlockPropertyValue + primitiveOp,
+        mirroring the Notion web client (captured live)."""
+        from unpy.operations import build_block_property_update
+
+        op = build_block_property_update("row1", "d83f", [["Draft"]])
+        assert op["command"] == "updateBlockPropertyValue"
+        assert op["table"] == "block"
+        assert op["id"] == "row1"
+        assert op["path"] == ["properties", "d83f"]
+        assert op["args"] == {"primitiveOp": {"command": "set", "args": [["Draft"]]}}
+
+    def test_set_property_uses_high_level_op(self):
+        """CollectionRowBlock.set_property must emit updateBlockPropertyValue,
+        not a plain set on ["properties", <id>] (which Notion now 400s)."""
+        from unpy.collection import CollectionRowBlock
+
+        submitted = []
+
+        class FakeCollection:
+            def get_schema_property(self, identifier):
+                return {
+                    "id": "d83f",
+                    "slug": "status",
+                    "name": "Current status",
+                    "type": "select",
+                    "options": [{"value": "Draft", "color": "default"}],
+                }
+
+            def check_schema_select_options(self, prop, values):
+                return False, prop
+
+        class FakeClient:
+            def submit_transaction(self, ops):
+                if isinstance(ops, dict):
+                    ops = [ops]
+                submitted.extend(ops)
+
+        client = FakeClient()
+
+        row = CollectionRowBlock.__new__(CollectionRowBlock)
+        object.__setattr__(row, "_client", client)
+        object.__setattr__(row, "_id", "row1")
+        row.__dict__["collection"] = FakeCollection()
+        object.__setattr__(
+            row,
+            "_convert_python_to_notion",
+            lambda val, prop, identifier="<unknown>": (["properties", "d83f"], [["Draft"]]),
+        )
+
+        row.set_property("status", "Draft")
+        assert len(submitted) == 1
+        op = submitted[0]
+        assert op["command"] == "updateBlockPropertyValue"
+        assert op["path"] == ["properties", "d83f"]
+        assert op["args"]["primitiveOp"]["args"] == [["Draft"]]
+
+    def test_store_unwraps_update_block_property_value(self):
+        """run_local_operation must unwrap the primitiveOp so the local cache
+        sees a plain property set."""
+        from unpy.store import RecordStore
+
+        store = RecordStore.__new__(RecordStore)
+        store._mutex = __import__("threading").Lock()
+        store._values = {"block": {"row1": {"properties": {"d83f": [["Draft"]]}}}}
+        updates = []
+        store._update_record = lambda table, id, value=None, role=None: updates.append(
+            (table, id, value)
+        )
+
+        store.run_local_operation(
+            "block",
+            "row1",
+            ["properties", "d83f"],
+            "updateBlockPropertyValue",
+            {"primitiveOp": {"command": "set", "args": [["Done"]]}},
+        )
+        assert updates and updates[0][2]["properties"]["d83f"] == [["Done"]]
+
+    def test_post_surfaces_debug_message(self):
+        """client.post must include name + debugMessage in the raised
+        HTTPError, not just the generic message."""
+        from unpy.client import NotionClient
+
+        class FakeResponse:
+            status_code = 400
+
+            def json(self):
+                return {
+                    "name": "ValidationError",
+                    "message": "Something went wrong. (400)",
+                    "debugMessage": "Unsaved transactions: must use high-level property operations.",
+                }
+
+            def raise_for_status(self):
+                raise AssertionError("should not be reached")
+
+        class FakeSession:
+            def post(self, url, json=None, headers=None):
+                return FakeResponse()
+
+        client = NotionClient.__new__(NotionClient)
+        object.__setattr__(client, "session", FakeSession())
+        object.__setattr__(client, "current_user", None)
+        object.__setattr__(client, "current_space", None)
+
+        import pytest
+
+        with pytest.raises(Exception) as exc:
+            client.post("saveTransactionsFanout", {})
+        msg = str(exc.value)
+        assert "ValidationError" in msg
+        assert "high-level property operations" in msg

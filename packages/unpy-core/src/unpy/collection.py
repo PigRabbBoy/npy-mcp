@@ -15,7 +15,7 @@ from .block import Block, PageBlock, Children, CollectionViewBlock
 from .logger import logger
 from .maps import property_map, field_map
 from .markdown import markdown_to_notion, notion_to_markdown
-from .operations import build_operation
+from .operations import build_block_property_update, build_operation
 from .records import Record
 from .utils import (
     add_signed_prefix_as_needed,
@@ -635,7 +635,9 @@ class CollectionRowBlock(PageBlock):
         if prop["type"] == "relation" and prop.get("property"):
             self._sync_two_way_relation(prop, val)
         else:
-            self.set(path, val)
+            self._client.submit_transaction(
+                build_block_property_update(self.id, prop["id"], val)
+            )
 
     def _sync_two_way_relation(self, prop, new_val):
         """Write a two-way relation value on BOTH rows (this row and the
@@ -659,8 +661,8 @@ class CollectionRowBlock(PageBlock):
             return ids
 
         reverse_pid = prop["property"]
-        ops = [build_operation(
-            id=self.id, path=["properties", prop["id"]], args=new_val
+        ops = [build_block_property_update(
+            self.id, prop["id"], new_val
         )]
         old_ids = set(_ids(self.get(["properties", prop["id"]])))
         new_ids = set(_ids(new_val))
@@ -673,8 +675,8 @@ class CollectionRowBlock(PageBlock):
             if self.id in _ids(existing):
                 continue
             new_list = existing + [["‣", [["p", self.id]]]] if existing else [["‣", [["p", self.id]]]]
-            ops.append(build_operation(
-                id=target_id, path=["properties", reverse_pid], args=new_list
+            ops.append(build_block_property_update(
+                target_id, reverse_pid, new_list
             ))
         for target_id in removed:
             block = self._client.get_block(target_id)
@@ -693,8 +695,8 @@ class CollectionRowBlock(PageBlock):
             # strip trailing separator
             while filtered and filtered[-1] == [","]:
                 filtered.pop()
-            ops.append(build_operation(
-                id=target_id, path=["properties", reverse_pid], args=filtered
+            ops.append(build_block_property_update(
+                target_id, reverse_pid, filtered
             ))
         self._client.submit_transaction(ops)
 

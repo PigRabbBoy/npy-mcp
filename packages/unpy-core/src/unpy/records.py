@@ -1,7 +1,7 @@
 from copy import deepcopy
 
 from .logger import logger
-from .operations import build_operation
+from .operations import build_block_property_update, build_operation
 from .utils import extract_id, get_by_path
 
 
@@ -114,6 +114,17 @@ class Record(object):
         """
         self._client.submit_transaction(
             build_operation(id=self.id, path=path, args=value, table=self._table)
+        )
+
+    def set_property_value(self, prop_id, value):
+        """
+        Set a property value on a block record using Notion's high-level
+        "updateBlockPropertyValue" operation (plain "set" on the
+        ["properties", <id>] path is rejected with 400 for row blocks).
+        `value` must already be in Notion segment format.
+        """
+        self._client.submit_transaction(
+            build_block_property_update(self.id, prop_id, value)
         )
 
     def __eq__(self, other):

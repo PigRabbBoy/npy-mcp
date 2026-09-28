@@ -15,8 +15,8 @@ _CLI_SRC = os.path.abspath(_CLI_SRC)
 if _CLI_SRC not in sys.path:
     sys.path.insert(0, _CLI_SRC)
 
-# Ensure npy-mcp is importable
-_MCP_SRC = os.path.join(os.path.dirname(__file__), "..", "packages", "npy-mcp", "src")
+# Ensure unpy-mcp is importable
+_MCP_SRC = os.path.join(os.path.dirname(__file__), "..", "packages", "unpy-mcp", "src")
 _MCP_SRC = os.path.abspath(_MCP_SRC)
 if _MCP_SRC not in sys.path:
     sys.path.insert(0, _MCP_SRC)

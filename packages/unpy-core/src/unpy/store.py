@@ -418,6 +418,15 @@ class RecordStore(object):
             self.run_local_operation(**operation)
 
     def run_local_operation(self, table, id, path, command, args):
+        # block property value updates arrive wrapped (updateBlockPropertyValue
+        # + primitiveOp) — unwrap to a plain property set for the local store
+        if command == "updateBlockPropertyValue":
+            primitive = (args or {}).get("primitiveOp") or {}
+            command = primitive.get("command", "set")
+            args = primitive.get("args")
+            if len(path) == 2 and path[0] == "properties":
+                path = ["properties", path[1]]
+
         # schema updates arrive wrapped (updateCollectionPropertySchema +
         # primitiveOp) — unwrap to a plain schema update for the local store
         if command == "updateCollectionDeletedPropertySchema":
