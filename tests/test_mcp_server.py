@@ -24,7 +24,7 @@ def mcp_server(monkeypatch):
 class TestToolRegistration:
     @pytest.mark.asyncio
     async def test_read_tools_registered(self, mcp_server):
-        """Without NOTION_ALLOW_WRITE, only 7 read tools should be registered."""
+        """Without NOTION_ALLOW_WRITE, only 8 read tools should be registered."""
         async with Client(mcp_server) as client:
             result = await client.list_tools()
             tool_names = [t.name for t in result.tools]
@@ -35,6 +35,7 @@ class TestToolRegistration:
             assert "list_pages" in tool_names
             assert "get_database" in tool_names
             assert "query_database" in tool_names
+            assert "export" in tool_names
             assert "create_page" not in tool_names
             assert "delete_block" not in tool_names
 
@@ -42,7 +43,7 @@ class TestToolRegistration:
     async def test_read_tool_count(self, mcp_server):
         async with Client(mcp_server) as client:
             result = await client.list_tools()
-            assert len(result.tools) == 8
+            assert len(result.tools) == 9
 
 
 class TestWriteGate:
@@ -58,7 +59,7 @@ class TestWriteGate:
         async with Client(mcp) as client:
             result = await client.list_tools()
             tool_names = [t.name for t in result.tools]
-            assert len(result.tools) == 27
+            assert len(result.tools) == 28
             assert "create_page" in tool_names
             assert "delete_block" in tool_names
             assert "add_database_row" in tool_names

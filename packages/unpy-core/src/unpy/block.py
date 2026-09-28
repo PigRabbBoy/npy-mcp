@@ -1,11 +1,9 @@
-import io
 import mimetypes
 import os
 import random
 import requests
 import time
 import uuid
-import zipfile
 
 from cached_property import cached_property
 from copy import deepcopy
@@ -434,48 +432,15 @@ class Block(Record):
             ]
         )
 
-    def extract_markdown(self):
-        task_id = self._client.post("https://www.notion.so/api/v3/enqueueTask", {
-            "task": {
-                "eventName": "exportBlock",
-                "request": {
-                    "block": {
-                        "id": self.id,
-                        "spaceId": self._client.current_space.id,
-                    },
-                    "recursive": False,
-                    "exportOptions": {
-                        "exportType": "markdown",
-                        "timeZone": "America/Los_Angeles",
-                        "locale": "en",
-                        "collectionViewExportType": "currentView",
-                        "includeContents": "no_files",
-                        "preferredViewMap": {}
-                    },
-                    "shouldExportComments": False
-                }
-            }
-        }).json()["taskId"]
+    def export(self, **kwargs):
+        """
+        Export this block (page or database) to files via Notion's
+        server-side export task. See `unpy.export.export_block` for the
+        available keyword arguments (format, recursive, output_dir, ...).
+        """
+        from .export import export_block
 
-        for i in range(5000):
-            response = self._client.post("https://www.notion.so/api/v3/getTasks", {
-                "taskIds": [task_id]
-            }).json()
-            if response["results"] and response["results"][0]["state"] == "success":
-                break
-            time.sleep(0.25)
-
-        zip_url = response["results"][0]["status"]["exportURL"]
-
-        response = self._client.session.get(zip_url, timeout=120)
-        response.raise_for_status()
-
-        # unzip the contents in memory and read the contents of the file inside (there should only be one file, but check the name)
-        with zipfile.ZipFile(io.BytesIO(response.content)) as z:
-            names = z.namelist()
-            assert len(names) == 1, "Expected exactly one file in the zip"
-            with z.open(names[0]) as f:
-                return f.read().decode("utf-8")
+        return export_block(self._client, self.id, **kwargs)
 
 
 class DividerBlock(Block):

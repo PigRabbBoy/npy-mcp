@@ -7,7 +7,7 @@
 Unofficial Python 3.12+ client for Notion's internal API (v3). Three packages
 in one repo:
 
-- **unpy-mcp** — MCP server (27 tools) for Claude Desktop, Cursor, VS Code, Codex, Claude Code
+- **unpy-mcp** — MCP server (28 tools) for Claude Desktop, Cursor, VS Code, Codex, Claude Code
 - **unpy-cli** — command-line tool (26 commands, same capabilities)
 - **unpy-core** — Python library you can build on directly
 
@@ -165,7 +165,7 @@ explicitly opt in. See [ADR-0005](docs/adr/0005-read-write-scope-gated.md).
 
 ## What your AI can do
 
-All **27 tools** (8 read + 19 write):
+All **28 tools** (9 read + 19 write):
 
 | Read — always available | |
 |---|---|
@@ -177,6 +177,7 @@ All **27 tools** (8 read + 19 write):
 | `get_database` | Schema + sample rows (`full_schema` dumps everything, for provisioning) |
 | `query_database` | Filter/sort rows — formulas and rollups fully evaluated |
 | `get_comments` | Read comment threads on a page/block |
+| `export` | Export a Page/Database to PDF, HTML, or Markdown & CSV files |
 
 | Write — needs `NOTION_ALLOW_WRITE=1` | |
 |---|---|
@@ -483,7 +484,7 @@ unpy-mcp/
 │   │   ├── auth.py                ← token + space resolution
 │   │   └── operations.py          ← transaction op builder
 │   ├── unpy-cli/src/unpy_cli/     ← CLI (Typer, 26 commands)
-│   └── unpy-mcp/src/unpy_mcp/     ← MCP server (27 tools, stdio + HTTP)
+│   └── unpy-mcp/src/unpy_mcp/     ← MCP server (28 tools, stdio + HTTP)
 ├── tests/                         ← 126 tests (pytest + vcr.py)
 ├── docs/adr/                      ← 8 Architecture Decision Records
 ├── CONTEXT.md                     ← Domain glossary

@@ -21,6 +21,7 @@ description: >-
 | See a database's columns + sample rows | `get_database` |
 | List rows from a database | `query_database` |
 | Read comments on a page | `get_comments` |
+| Export a page/database to PDF/HTML/Markdown files | `export` |
 | Create a new page | `create_page` |
 | Add content blocks to a page | `append_blocks` |
 | Edit a block's text or checkbox | `update_block` |

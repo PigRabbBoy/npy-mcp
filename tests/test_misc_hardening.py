@@ -58,8 +58,9 @@ def test_upload_and_export_calls_pass_a_timeout():
     core = pathlib.Path("packages/unpy-core/src/unpy")
     block = (core / "block.py").read_text()
     collection = (core / "collection.py").read_text()
-    # export-zip download
-    assert "session.get(zip_url, timeout=" in block
+    export = (core / "export.py").read_text()
+    # export-zip download (moved from block.py to export.py)
+    assert "session.get(export_url, timeout=" in export
     # the two signed-PUT uploads
     assert block.count("requests.put(") == 1
     assert "timeout=" in block.split("requests.put(")[1].split(")")[0]

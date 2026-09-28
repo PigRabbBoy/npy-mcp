@@ -1,6 +1,6 @@
 """npy-mcp server — Notion MCP server (stdio + HTTP).
 
-Exposes 6 read tools (+ 9 write tools when NOTION_ALLOW_WRITE=1).
+Exposes 7 read tools (+ write tools when NOTION_ALLOW_WRITE=1).
 Uses MCP Python SDK v2 (MCPServer + decorator pattern).
 
 Per-request token: HTTP clients can send X-Notion-Token header to use
@@ -1472,6 +1472,87 @@ def query_database(
     if total_note:
         lines.append("")
         lines.append(total_note)
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def export(
+    page_or_database_id: str,
+    format: str = "markdown",
+    recursive: bool = False,
+    output_dir: str = "",
+    database_views: str = "current",
+    page_content: str = "everything",
+    create_folders: bool = True,
+    pdf_format: str = "Letter",
+    export_comments: bool = False,
+    timezone: str = "",
+    timeout: int = 120,
+) -> str:
+    """Export a Page or Database to PDF, HTML, or Markdown & CSV files.
+
+    Runs Notion's server-side export (same engine as the UI's Export
+    dialog), polls until done, downloads the zip, unpacks it, and writes
+    the files under output_dir (default: the allowed file root). Markdown
+    exports of a single page also return the .md text inline.
+
+    Args:
+        page_or_database_id: Page or Database block URL or ID
+        format: "pdf" | "html" | "markdown"
+        recursive: Include subpages
+        output_dir: Directory to write files into (must be inside
+            NOTION_MCP_FILE_ROOT; default = the file root itself)
+        database_views: "current" (only the current view of each database)
+            or "all" (every view as CSV)
+        page_content: "everything" or "no_files" (skip image/file downloads)
+        create_folders: When recursive, keep one folder per subpage
+            (false = flat file tree)
+        pdf_format: PDF page size — Letter, Legal, Tabloid, A0-A6 (pdf only)
+        export_comments: Include page comments in the export
+        timezone: IANA timezone for date rendering (default: server local)
+        timeout: Max seconds to wait for Notion's export task (default 120)
+
+    Returns:
+        Report of written file paths (plus .md text when single-file).
+    """
+    from unpy.export import ExportError, export_block
+
+    client = _get_client()
+    block = client.get_block(page_or_database_id)
+    if block is None:
+        return f"Block not found: {page_or_database_id}"
+    root = Path(os.environ.get("NOTION_MCP_FILE_ROOT") or os.getcwd()).expanduser().resolve()
+    target = Path(output_dir).expanduser().resolve() if output_dir else root
+    if not target.is_relative_to(root):
+        return (
+            f"Refusing to write to '{output_dir}': outside allowed file root "
+            f"'{root}'. Set NOTION_MCP_FILE_ROOT to another directory (or '/' "
+            "to allow all)."
+        )
+    try:
+        result = export_block(
+            client,
+            block.id,
+            format=format,
+            recursive=recursive,
+            output_dir=str(target),
+            database_views=database_views,
+            page_content=page_content,
+            create_folders=create_folders,
+            pdf_format=pdf_format,
+            export_comments=export_comments,
+            timezone=timezone or None,
+            timeout=float(timeout),
+        )
+    except (ExportError, ValueError) as exc:
+        return f"Export failed: {exc}"
+    lines = [f"Exported {block.id} → {result['output_dir']} ({len(result['files'])} file(s)):"]
+    for path in result["files"]:
+        lines.append(f"  {path}")
+    if result.get("text"):
+        lines.append("")
+        lines.append("--- markdown content ---")
+        lines.append(result["text"])
     return "\n".join(lines)
 
 

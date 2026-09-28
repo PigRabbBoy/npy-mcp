@@ -50,10 +50,17 @@ Any call that mutates Notion state: create, append, update, move, delete,
 add alias, add Database Row, update Row property, delete Row.
 _Avoid_: mutation, change
 
-**Markdown Export**:
-Server-side export of a Page or Block to CommonMark via Notion's
-`getBlockExport` endpoint. The default output format for read tools.
-_Avoid_: extract, render, dump
+**Page Read**:
+An interactive read of a Page or its blocks (CLI/MCP get tools). Rendered
+client-side from the RecordStore — fast, depth-limited, no files.
+_Avoid_: export, fetch, dump
+
+**Export**:
+A server-side async task (`partitionedExportBlock`) that converts a Page
+or Database into PDF, HTML, or Markdown & CSV files, downloaded as a zip
+and unpacked into an output directory. Read-only against Notion state;
+writes files only inside the allowed local file root.
+_Avoid_: download, page read, dump, render
 
 **Recording**:
 A saved HTTP request/response pair captured from a live Notion session,

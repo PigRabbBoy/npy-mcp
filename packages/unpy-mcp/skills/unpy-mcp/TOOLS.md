@@ -131,6 +131,38 @@ Read all comment threads attached to a page or block.
 
 ---
 
+### `export`
+
+Export a Page or Database to PDF, HTML, or Markdown & CSV files — the
+same server-side engine as the UI's Export dialog. Blocks until the
+export finishes (default 120s), downloads the zip, unpacks it, and
+writes the files. A single-file markdown export also returns the `.md`
+text inline.
+
+| Arg | Type | Default | Description |
+|---|---|---|---|
+| `page_or_database_id` | string | — | Page/Database URL or ID (required) |
+| `format` | string | `markdown` | `pdf` \| `html` \| `markdown` |
+| `recursive` | bool | false | Include subpages |
+| `output_dir` | string | file root | Directory inside `NOTION_MCP_FILE_ROOT` to write into |
+| `database_views` | string | `current` | `current` or `all` (views exported as CSV) |
+| `page_content` | string | `everything` | `everything` or `no_files` (skip file downloads) |
+| `create_folders` | bool | true | One folder per subpage when recursive (false = flat) |
+| `pdf_format` | string | `Letter` | PDF page size: Letter, Legal, Tabloid, A0–A6 |
+| `export_comments` | bool | false | Include page comments |
+| `timezone` | string | local | IANA timezone for date rendering |
+| `timeout` | int | 120 | Max seconds to wait for the export task |
+
+**Example call:**
+```json
+{"page_or_database_id": "44444444-4444-4444-8444-444444444444", "format": "pdf", "recursive": true}
+```
+
+**Returns:** Report of written file paths (plus markdown content when
+single-file). Files are written inside `NOTION_MCP_FILE_ROOT`.
+
+---
+
 ### `get_image`
 
 Download an image block and return it as an MCP image content block —

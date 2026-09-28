@@ -22,6 +22,7 @@ Commands:
   add-comment      Comment on a page — new thread or reply (write)
 
   get-image        Download an image/file block (read)
+  export           Export a page/database to PDF/HTML/Markdown & CSV (read)
   create-database  Create a database with full schema — relation/formula/
                    rollup columns (write)
   add-column       Add a column (all types incl. relation/formula/rollup) (write)
@@ -463,6 +464,55 @@ def get_image(
     out = Path(filename)
     out.write_bytes(resp.content)
     typer.echo(f"Saved {len(resp.content)} bytes to {out}")
+
+
+@app.command(name="export")
+def export(
+    page_or_database_id: str = typer.Argument(..., help="Page or Database URL or ID"),
+    format: str = typer.Option("markdown", "--format", "-f", help="pdf | html | markdown"),
+    recursive: bool = typer.Option(False, "--recursive", "-r", help="Include subpages"),
+    output: str = typer.Option(None, "--output", "-o", help="Output directory (default: current directory)"),
+    database_views: str = typer.Option("current", "--database-views", help="current | all (views exported as CSV)"),
+    page_content: str = typer.Option("everything", "--page-content", help="everything | no_files"),
+    flat: bool = typer.Option(False, "--flat", help="Disable 'create folders for subpages' (recursive markdown/html only)"),
+    pdf_format: str = typer.Option("Letter", "--pdf-format", help="PDF page size: Letter, Legal, Tabloid, A0-A6"),
+    export_comments: bool = typer.Option(False, "--export-comments", help="Include page comments"),
+    timezone: str = typer.Option(None, "--timezone", help="IANA timezone (default: local)"),
+    timeout: int = typer.Option(120, "--timeout", help="Max seconds to wait for the export task"),
+    token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
+) -> None:
+    """Export a Page or Database to PDF/HTML/Markdown & CSV files."""
+    from unpy.export import ExportError, export_block
+
+    client = get_client(token_arg=token)
+    block = client.get_block(page_or_database_id)
+    if block is None:
+        typer.echo(f"Block not found: {page_or_database_id}", err=True)
+        raise typer.Exit(1)
+    try:
+        result = export_block(
+            client,
+            block.id,
+            format=format,
+            recursive=recursive,
+            output_dir=output,
+            database_views=database_views,
+            page_content=page_content,
+            create_folders=not flat,
+            pdf_format=pdf_format,
+            export_comments=export_comments,
+            timezone=timezone,
+            timeout=float(timeout),
+        )
+    except (ExportError, ValueError) as exc:
+        typer.echo(f"Export failed: {exc}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Exported {block.id} → {result['output_dir']} ({len(result['files'])} file(s))")
+    for path in result["files"]:
+        typer.echo(f"  {path}")
+    if result.get("text"):
+        typer.echo()
+        typer.echo(result["text"])
 
 
 @app.command(name="create-database")
