@@ -6,6 +6,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-28
+
+### Added
+- **Export Pages and Databases to files** (ADR-0010): MCP tool `export`
+  and CLI `unpy export <id>`, using the same server-side engine as the
+  UI's Export dialog (`partitionedExportBlock` async task). Three
+  formats — `pdf`, `html`, `markdown` (Markdown & CSV) — with the
+  dialog's options: include subpages (recursive), database views
+  (current/all as CSV), page content (everything/no_files), create
+  folders for subpages, PDF page size, export comments, timezone. The
+  call blocks until the export finishes (default 120s), then downloads
+  the zip, unpacks it, and writes the files; single-file markdown
+  exports also return the `.md` text inline. Files are written inside
+  `NOTION_MCP_FILE_ROOT` (MCP) or `--output` (CLI). Not gated by
+  `NOTION_ALLOW_WRITE` — it mutates no Notion state.
+- API payload details captured live from the web client and documented
+  in `docs/notes/export-api-capture.md`, including the trap that
+  `collectionViewExportType: "allViews"` hangs the export task forever
+  (the correct value is `"all"` — pinned by tests).
+
+### Changed
+- **ADR-0003 revised**: read tools actually render client-side (the
+  server-side markdown strategy was planned but never wired in); the
+  concepts are now split as interactive **Page Read** vs file-producing
+  **Export** (see ADR-0010). Glossary updated accordingly.
+- The dead legacy `Block.extract_markdown()` (old `exportBlock` event
+  name, hardcoded options, `www.notion.so` host) is removed and replaced
+  by `unpy.export` / `Block.export()`.
+- MCP server now exposes 28 tools (9 read + 19 write).
+
 ## [1.2.3] - 2026-09-28
 
 ### Fixed
