@@ -4,6 +4,31 @@ All notable changes to unpy-mcp are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.2.3] - 2026-09-28
+
+### Fixed
+- **Row property writes work again** (issue [#17](https://github.com/PigRabbBoy/npy-mcp/issues/17)).
+  Notion's server started rejecting the old raw `set` operation on
+  `["properties", <id>]` for database rows with a 400 —
+  "Block property value updates must use high-level property
+  operations" — which broke `update_database_row`, `add_database_row`
+  (beyond the title), `CollectionRowBlock.set_property`, and the CLI's
+  `update-database-row`. unpy now emits the same high-level operation
+  the Notion web client sends (captured live from a signed-in session):
+  `updateBlockPropertyValue` with the value wrapped in a `primitiveOp`.
+  Verified live: select updates, title updates, and creating rows with
+  properties all persist. Two-way relation writes were converted too.
+- **400 errors now surface Notion's real cause.** `client.post()` raises
+  an `HTTPError` that includes the response's `name` and `debugMessage`
+  alongside the generic `message`, so errors like
+  "Block property value updates must use high-level property
+  operations" are visible instead of a bare "Something went wrong.
+  (400)".
+- `tests/conftest.py` still pointed at the pre-rename `npy-mcp` src
+  path, so `unpy_mcp` tests only ran with an explicit `PYTHONPATH`.
+
 ## [1.2.2] - 2026-09-08
 
 ### Added
