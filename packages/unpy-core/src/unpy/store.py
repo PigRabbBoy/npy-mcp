@@ -18,6 +18,22 @@ from . import settings as _settings
 from .utils import extract_id
 
 
+def unwrap_record(record):
+    """Handle both old format {"value": {...}, "role": "..."}
+    and new nested format {"value": {"value": {...}, "role": "..."}}.
+
+    Returns a (value, role) tuple. Non-dict records yield (None, None).
+    """
+    if not isinstance(record, dict):
+        return None, None
+    value = record.get("value")
+    role = record.get("role")
+    if isinstance(value, dict) and "value" in value and "role" in value:
+        role = value.get("role")
+        value = value.get("value")
+    return value, role
+
+
 class MissingClass(object):
     def __bool__(self):
         return False
@@ -385,13 +401,7 @@ class RecordStore(object):
             for id, record in records.items():
                 if not isinstance(record, dict):
                     continue
-                # handle both old format {"value": {...}, "role": "..."}
-                # and new format {"spaceId": "...", "value": {"value": {...}, "role": "..."}}
-                value = record.get("value")
-                role = record.get("role")
-                if isinstance(value, dict) and "value" in value and "role" in value:
-                    role = value.get("role")
-                    value = value.get("value")
+                value, role = unwrap_record(record)
                 self._update_record(table, id, value=value, role=role)
 
     def call_query_collection(

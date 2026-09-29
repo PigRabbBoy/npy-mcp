@@ -24,7 +24,7 @@ from .monitor import Monitor
 from .operations import operation_update_last_edited, build_operation
 from .settings import API_BASE_URL
 from .space import Space
-from .store import RecordStore
+from .store import RecordStore, unwrap_record
 from .user import User
 from .utils import extract_id, now
 
@@ -165,6 +165,9 @@ class NotionClient(object):
         Note: This mutates the records dict
         """
 
+        if not space_id:
+            return
+
         space_data = self.post(
             "getPublicSpaceData", {"type": "space-ids", "spaceIds": [space_id]}
         ).json()
@@ -184,16 +187,22 @@ class NotionClient(object):
     def _update_user_info(self):
         records = self.post("loadUserContent", {}).json()["recordMap"]
         user_id = list(records["notion_user"].keys())[0]
-        user_root_value = records["user_root"][user_id]["value"]
-        if "space_view_pointers" in user_root_value:
-            space_id = user_root_value["space_view_pointers"][0]["spaceId"]
-        else:
-            space_id = user_root_value["value"]["space_view_pointers"][0]["spaceId"]
+
+        # handle both old {"value": {...data}} and new
+        # {"value": {"value": {...data}, "role": "..."}} nesting per record;
+        # tolerate a missing user_root table or no space pointers (guests)
+        space_id = None
+        user_root_record = records.get("user_root", {}).get(user_id)
+        user_root_value, _ = unwrap_record(user_root_record)
+        space_view_pointers = (user_root_value or {}).get("space_view_pointers", [])
+        if space_view_pointers:
+            space_id = space_view_pointers[0].get("spaceId")
         self._fetch_space_data(records, space_id)
 
         self._store.store_recordmap(records)
         self.current_user = self.get_user(list(records["notion_user"].keys())[0])
-        self.current_space = self.get_space(list(records["space"].keys())[0])
+        space_ids = list(records.get("space", {}).keys())
+        self.current_space = self.get_space(space_ids[0]) if space_ids else None
         return records
 
     def get_email_uid(self):

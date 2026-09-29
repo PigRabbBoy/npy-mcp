@@ -151,3 +151,140 @@ class TestStoreRecordmap:
         store = unpy_client_fixture._store
         users = store._values.get("notion_user", {})
         assert len(users) >= 1
+
+
+class TestUpdateUserInfoFormatTolerance:
+    """Issue #407: _update_user_info must tolerate both record nesting
+    formats plus a missing user_root table or empty space pointers."""
+
+    @staticmethod
+    def _make_client(monkeypatch):
+        monkeypatch.setenv("NOTION_TOKEN_V2", FAKE_TOKEN)
+        monkeypatch.setenv("NOTION_TOKEN", FAKE_TOKEN)
+        from unpy import NotionClient
+        return NotionClient.__new__(NotionClient)
+
+    def _run(self, monkeypatch, records):
+        """Build a client whose post() replays the given recordMap."""
+        client = self._make_client(monkeypatch)
+        calls = []
+
+        class FakeResponse:
+            @staticmethod
+            def json():
+                return {"recordMap": records}
+
+        class FakeStore:
+            def store_recordmap(self, rm):
+                calls.append("recordmap")
+
+        client.post = lambda endpoint, data: FakeResponse()
+        client._store = FakeStore()
+        client.current_user = None
+        client.current_space = None
+        client._fetch_space_data = lambda rm, space_id: calls.append(space_id)
+        client.get_user = lambda uid: user_ref
+        client.get_space = lambda sid: space_ref
+
+        user_ref = type("Ref", (), {"id": "u1"})()
+        space_ref = type("Ref", (), {"id": "s1"})()
+
+        result = client._update_user_info()
+        return client, result, calls
+
+    def test_nested_value_format(self, monkeypatch):
+        records = {
+            "notion_user": {
+                "u1": {"value": {"id": "u1", "email": "x@y.z"}, "role": "editor"}
+            },
+            "user_root": {
+                "u1": {
+                    "value": {
+                        "value": {
+                            "id": "u1",
+                            "space_view_pointers": [{"spaceId": "s1"}],
+                        },
+                        "role": "editor",
+                    }
+                }
+            },
+            "space": {"s1": {"value": {"id": "s1"}, "role": "editor"}},
+            "block": {},
+        }
+        client, result, calls = self._run(monkeypatch, records)
+        # space_id unwrapped from the nested format and passed on
+        assert calls == ["s1", "recordmap"]
+        assert client.current_user is not None
+        assert client.current_space.id == "s1"
+
+    def test_old_flat_value_format(self, monkeypatch):
+        records = {
+            "notion_user": {
+                "u1": {"value": {"id": "u1", "email": "x@y.z"}, "role": "editor"}
+            },
+            "user_root": {
+                "u1": {
+                    "value": {
+                        "id": "u1",
+                        "space_view_pointers": [{"spaceId": "s1"}],
+                    },
+                    "role": "editor",
+                }
+            },
+            "space": {"s1": {"value": {"id": "s1"}, "role": "editor"}},
+            "block": {},
+        }
+        client, result, calls = self._run(monkeypatch, records)
+        assert calls == ["s1", "recordmap"]
+        assert client.current_space.id == "s1"
+
+    def test_missing_user_root_table(self, monkeypatch):
+        records = {
+            "notion_user": {"u1": {"value": {"id": "u1"}, "role": "editor"}},
+            "space": {},
+            "block": {},
+        }
+        client, result, calls = self._run(monkeypatch, records)
+        # no space_id → _fetch_space_data skipped, current_space None
+        assert calls == [None, "recordmap"]
+        assert client.current_space is None
+
+    def test_empty_space_pointers(self, monkeypatch):
+        records = {
+            "notion_user": {"u1": {"value": {"id": "u1"}, "role": "editor"}},
+            "user_root": {
+                "u1": {"value": {"value": {"id": "u1"}, "role": "editor"}}
+            },
+            "space": {},
+            "block": {},
+        }
+        client, result, calls = self._run(monkeypatch, records)
+        assert calls == [None, "recordmap"]
+        assert client.current_space is None
+
+
+class TestUnwrapRecord:
+    def test_old_format(self):
+        from unpy.store import unwrap_record
+        value, role = unwrap_record({"value": {"id": "x"}, "role": "editor"})
+        assert value == {"id": "x"}
+        assert role == "editor"
+
+    def test_nested_format(self):
+        from unpy.store import unwrap_record
+        value, role = unwrap_record(
+            {"value": {"value": {"id": "x"}, "role": "reader"}}
+        )
+        assert value == {"id": "x"}
+        assert role == "reader"
+
+    def test_non_dict(self):
+        from unpy.store import unwrap_record
+        assert unwrap_record(None) == (None, None)
+        assert unwrap_record("junk") == (None, None)
+
+    def test_flat_value_without_role(self):
+        from unpy.store import unwrap_record
+        value, role = unwrap_record({"value": {"id": "x"}})
+        assert value == {"id": "x"}
+        assert role is None

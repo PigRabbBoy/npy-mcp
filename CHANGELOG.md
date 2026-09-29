@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-09-29
+
+### Fixed
+- Hardened `NotionClient._update_user_info()` against Notion's nested
+  `loadUserContent` record format and guest-like workspaces (#407):
+  - missing `user_root` table or empty `space_view_pointers` no longer
+    raises `KeyError`/`IndexError` (space_id falls back to `None`)
+  - empty `space` record table sets `current_space = None` instead of
+    raising `IndexError`
+  - `_fetch_space_data` skips the `getPublicSpaceData` call entirely when
+    no space id was resolved (previously sent `spaceIds: [None]`)
+  - record-nesting unwrapping shared via new `unpy.store.unwrap_record()`
+    helper (single source of truth with `RecordStore.store_recordmap`)
+- 8 new tests covering both old and nested record formats plus the
+  missing/empty edge cases (279 total, all passing)
+
 ## [2.0.0] - 2026-09-29
 
 Performance overhaul (grilling session design: bench-first, milestones
