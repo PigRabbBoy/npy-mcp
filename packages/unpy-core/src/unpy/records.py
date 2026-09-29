@@ -112,6 +112,22 @@ class Record(object):
         """
         Set a specific `value` (under the specific `path`) on the record's data structure on the server.
         """
+        # Block property values must go through the high-level
+        # "updateBlockPropertyValue" command — Notion's server rejects plain
+        # "set" on ["properties", <key>] paths with 400 (blocks now carry
+        # crdt_format_version). The "title" key is still accepted the old
+        # way, and non-block tables are unaffected. (issues #17, #18)
+        if (
+            self._table == "block"
+            and isinstance(path, (list, tuple))
+            and len(path) == 2
+            and path[0] == "properties"
+            and path[1] not in ("title",)
+        ):
+            self._client.submit_transaction(
+                build_block_property_update(self.id, path[1], value)
+            )
+            return
         self._client.submit_transaction(
             build_operation(id=self.id, path=path, args=value, table=self._table)
         )

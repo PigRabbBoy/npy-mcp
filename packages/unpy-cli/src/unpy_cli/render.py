@@ -159,7 +159,13 @@ def _block_to_markdown(block: Block) -> str:
     if btype == "quote":
         return f"> {md}"
     if btype == "code":
-        return f"```\n{md}\n```"
+        lang = ""
+        try:
+            lang = (block.language or "").strip().lower()
+        except Exception:
+            lang = ""
+        fence = f"```{lang}" if lang else "```"
+        return f"{fence}\n{md}\n```"
     if btype == "callout":
         icon = block.get("format.page_icon", "") or "💡"
         return f"{icon} {md}"

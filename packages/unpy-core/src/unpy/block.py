@@ -123,17 +123,44 @@ class Children(object):
                 "block_type must be a string or a Block subclass with a _type attribute"
             )
 
-        block_id = self._client.create_record(
-            table="block",
-            parent=self._parent,
-            type=block_type,
-            child_list_key=child_list_key,
-        )
+        # One transaction for record creation + property writes: `create_record`
+        # and the setters below buffer into the enclosing transaction, so a
+        # failing property write (e.g. a 400 from the server) rolls back the
+        # whole block and no empty shell is left behind. (issue #19)
+        with self._client.as_atomic_transaction():
+            block_id = self._client.create_record(
+                table="block",
+                parent=self._parent,
+                type=block_type,
+                child_list_key=child_list_key,
+            )
 
-        block = self._get_block(block_id)
+            # Buffered operations don't run locally until the transaction
+            # commits, but the property setters below (and the caller)
+            # immediately need the block record. Mirror the create locally:
+            # the pending "set" record op + the parent content "listAfter"
+            # op are exactly what run_local_operation would replay on
+            # commit, and a server rollback of this tx means the process
+            # is failing anyway (issue #19).
+            pending = self._client._transaction_operations
+            pending_created = [
+                op for op in pending if op["id"] == block_id
+            ] or None
+            if pending_created:
+                list_ops = [
+                    op
+                    for op in pending
+                    if op["command"].startswith("list")
+                    and isinstance(op.get("args"), dict)
+                    and op["args"].get("id") == block_id
+                ]
+                self._client._store.run_local_operations(
+                    pending_created + list_ops
+                )
 
-        if kwargs:
-            with self._client.as_atomic_transaction():
+            block = self._get_block(block_id)
+
+            if kwargs:
                 for key, val in kwargs.items():
                     if hasattr(block, key):
                         setattr(block, key, val)
@@ -517,8 +544,15 @@ class CodeBlock(BasicBlock):
     # Code content must be stored verbatim — running it through the markdown
     # converter strips leading whitespace (commonmark treats 4+ spaces as
     # indented code and the parser drops the rest), corrupting Python, YAML,
-    # Makefiles, etc. (issue #8)
-    title = property_map("title", python_to_api=plaintext_to_notion, markdown=False)
+    # Makefiles, etc. (issue #8). The api_to_python side joins the rich-text
+    # segments back into the verbatim string for reads (issue #20) — without
+    # it the raw [["text", …]] list leaks through.
+    title = property_map(
+        "title",
+        python_to_api=plaintext_to_notion,
+        api_to_python=notion_to_plaintext,
+        markdown=False,
+    )
     title_plaintext = property_map(
         "title",
         python_to_api=plaintext_to_notion,

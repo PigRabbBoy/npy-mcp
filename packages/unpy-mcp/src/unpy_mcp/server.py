@@ -141,9 +141,16 @@ def _block_summary(block) -> dict:
         pass
     icon = block.get("format.page_icon") or ""
     btype = block.get("type", "") or ""
+    title_md = ""
+    title = ""
+    try:
+        title_md = block.title or ""
+        title = block.title_plaintext or ""
+    except Exception:
+        title_md = ""
+        title = ""
     # Strip icon from title to avoid noise (icon is separate field)
-    title = block.title_plaintext if hasattr(block, "title_plaintext") else None
-    if title and icon and title.startswith(icon):
+    if icon and title.startswith(icon):
         title = title[len(icon):].strip()
     # For collection_view/collection_view_page, use DB name if title is empty
     if not title and btype in ("collection_view", "collection_view_page"):
@@ -218,16 +225,17 @@ def _load_schema_cached(client, col_id: str) -> dict:
 _BLOCK_MARKER = "\x00block:"
 
 
-def _get_block_data(client, block_id: str) -> dict:
+def _get_block_data(client, block_id: str, force_refresh: bool = False) -> dict:
     """Fetch raw block data from store, lazily fetching over the wire if missing.
 
     Related blocks often appear in the local store as STUBS (id/type/parent
     but no properties) after queryCollection — treat those as missing and
-    force a real fetch.
+    force a real fetch. `force_refresh` re-fetches even cached records so
+    edits made outside this session are visible (issue #22).
     """
     def _fetch():
         try:
-            blk = client.get_block(block_id)
+            blk = client.get_block(block_id, force_refresh=force_refresh)
             if blk is not None:
                 return client._store._get("block", block_id)
         except Exception:
@@ -235,7 +243,7 @@ def _get_block_data(client, block_id: str) -> dict:
         return None
 
     data = client._store._get("block", block_id)
-    if not isinstance(data, dict):
+    if not isinstance(data, dict) or force_refresh:
         data = _fetch() or {}
     # Stub detection: page-type block with missing/empty properties
     if isinstance(data, dict) and data.get("type") == "page":
@@ -867,7 +875,13 @@ def _block_to_markdown(block) -> str:
     if btype == "quote":
         return f"> {md}"
     if btype == "code":
-        return f"```\n{md}\n```"
+        lang = ""
+        try:
+            lang = (block.language or "").strip().lower()
+        except Exception:
+            lang = ""
+        fence = f"```{lang}" if lang else "```"
+        return f"{fence}\n{md}\n```"
     if btype == "callout":
         icon = block.get("format.page_icon", "") or "💡"
         return f"{icon} {md}"
@@ -1064,18 +1078,22 @@ def search(
 def get_page(
     page_id: str,
     depth: int = 1,
+    refresh: bool = True,
 ) -> str:
     """Fetch a Notion page and its children tree as markdown.
 
     Args:
         page_id: Page URL or ID
         depth: 0=metadata only, 1=direct children (default), 2=grandchildren, -1=full tree
+        refresh: Force a server refresh before reading so edits made outside
+            this session (Notion UI, CLI, other scripts) are visible.
+            Default true; set false to serve from cache.
 
     Returns:
         Markdown rendering of the page and its children.
     """
     client = _get_client()
-    page = client.get_block(page_id)
+    page = client.get_block(page_id, force_refresh=refresh)
     if page is None:
         return f"Page not found: {page_id}"
     lines = _tree_to_markdown(client, page, depth)
@@ -1083,17 +1101,18 @@ def get_page(
 
 
 @mcp.tool()
-def get_block(block_id: str) -> str:
+def get_block(block_id: str, refresh: bool = True) -> str:
     """Fetch a single Notion block as markdown.
 
     Args:
         block_id: Block URL or ID
+        refresh: Force a server refresh before reading (default true).
 
     Returns:
         Markdown rendering of the block, or type info for non-text blocks.
     """
     client = _get_client()
-    block = client.get_block(block_id)
+    block = client.get_block(block_id, force_refresh=refresh)
     if block is None:
         return f"Block not found: {block_id}"
     md = _block_to_markdown(block)
@@ -1170,6 +1189,8 @@ def list_pages() -> str:
         Markdown list of pages with title and URL.
     """
     client = _get_client()
+    # get_top_level_pages re-calls loadUserContent, so top-level reads are
+    # inherently fresh (issue #22)
     pages = client.get_top_level_pages()
     if not pages:
         return "(no pages)"
@@ -1189,6 +1210,7 @@ def get_database(
     database_id: str,
     sample_rows: int = 5,
     full_schema: bool = False,
+    refresh: bool = True,
 ) -> str:
     """Fetch a Notion database (collection) schema and sample rows.
 
@@ -1198,6 +1220,7 @@ def get_database(
         full_schema: If true, include full column definitions (relation
             targets, rollup configs, formula expressions, select options) —
             rich enough to diff for idempotent provisioning.
+        refresh: Force a server refresh before reading (default true).
 
     Returns:
         Database name, column schema, and sample row data as markdown.
@@ -1351,6 +1374,7 @@ def query_database(
     database_id: str,
     limit: int = 20,
     fetch_all: bool = False,
+    refresh: bool = True,
 ) -> str:
     """Query a Notion database and return rows as a markdown table.
 
@@ -1360,6 +1384,7 @@ def query_database(
         fetch_all: If true, fetch every row in the database regardless of
             limit (the internal queryCollection API has no cursor pagination,
             but a single request can return the full result set).
+        refresh: Force a server refresh before reading (default true).
 
     Returns:
         Markdown table of database rows with all properties.
@@ -1371,7 +1396,7 @@ def query_database(
         'true' / 'false' strings.
     """
     client = _get_client()
-    block = client.get_block(database_id)
+    block = client.get_block(database_id, force_refresh=refresh)
     collection = None
     if block is not None:
         collection = getattr(block, "collection", None)
@@ -1518,7 +1543,7 @@ def export(
     from unpy.export import ExportError, export_block
 
     client = _get_client()
-    block = client.get_block(page_or_database_id)
+    block = client.get_block(page_or_database_id, force_refresh=True)
     if block is None:
         return f"Block not found: {page_or_database_id}"
     root = Path(os.environ.get("NOTION_MCP_FILE_ROOT") or os.getcwd()).expanduser().resolve()
@@ -1561,6 +1586,47 @@ def export(
 # ---------------------------------------------------------------------------
 
 _WRITE_ENABLED = os.environ.get("NOTION_ALLOW_WRITE") == "1"
+
+
+def _add_blocks_from_specs_core(parent, block_specs: list, type_map: dict):
+    """Create child blocks from [{type, text, checked?, icon?, language?}] specs.
+
+    Returns (count_added, failures) — one spec's failure does not abort the
+    batch; partial success is reported so clients can retry only the
+    remainder (issue #19). Used by append_blocks and create_page.
+    """
+    count = 0
+    failures = []
+    from unpy.block import TextBlock
+
+    for idx, spec in enumerate(block_specs):
+        btype = spec.get("type", "text")
+        text = spec.get("text", "")
+        cls = type_map.get(btype, TextBlock) if type_map else TextBlock
+        kwargs = {"title": text}
+        if btype == "todo" and "checked" in spec:
+            kwargs["checked"] = spec["checked"]
+        if btype == "callout" and "icon" in spec:
+            kwargs["icon"] = spec["icon"]
+        if btype == "code" and spec.get("language"):
+            kwargs["language"] = spec["language"]
+        try:
+            parent.children.add_new(cls, **kwargs)
+            count += 1
+        except Exception as exc:
+            detail = str(exc)
+            # requests HTTPError from v1.2.3+ embeds the server's
+            # debugMessage — surface it instead of swallowing detail
+            resp = getattr(exc, "response", None)
+            if resp is not None:
+                try:
+                    body = resp.json()
+                    detail = body.get("debugMessage") or detail
+                except Exception:
+                    pass
+            failures.append(f"block {idx + 1} ({btype}) failed: {detail}")
+    return count, failures
+
 
 def _embed_type_map() -> dict:
     """Embed-type → block-class map (lazy — needs the write-enabled imports)."""
@@ -1998,10 +2064,10 @@ if _WRITE_ENABLED:
             f"(discussion: {result['discussion_id']})"
         )
 
-    def _add_blocks_from_specs(parent, block_specs: list) -> int:
+    def _add_blocks_from_specs(parent, block_specs: list) -> tuple[int, list[str]]:
         """Create child blocks from [{type, text, checked?, icon?, language?}] specs.
 
-        Returns the number of blocks added. Used by append_blocks and create_page.
+        Thin wrapper over the module-level _add_blocks_from_specs_core.
         """
         TYPE_MAP = {
             "text": TextBlock,
@@ -2018,21 +2084,7 @@ if _WRITE_ENABLED:
             "toggle": ToggleBlock,
             "equation": EquationBlock,
         }
-        count = 0
-        for spec in block_specs:
-            btype = spec.get("type", "text")
-            text = spec.get("text", "")
-            cls = TYPE_MAP.get(btype, TextBlock)
-            kwargs = {"title": text}
-            if btype == "todo" and "checked" in spec:
-                kwargs["checked"] = spec["checked"]
-            if btype == "callout" and "icon" in spec:
-                kwargs["icon"] = spec["icon"]
-            if btype == "code" and spec.get("language"):
-                kwargs["language"] = spec["language"]
-            parent.children.add_new(cls, **kwargs)
-            count += 1
-        return count
+        return _add_blocks_from_specs_core(parent, block_specs, TYPE_MAP)
 
     @mcp.tool()
     def create_page(
@@ -2062,8 +2114,12 @@ if _WRITE_ENABLED:
         if icon:
             page.icon = icon
         if blocks:
-            _add_blocks_from_specs(page, json.loads(blocks))
-        return f"Created page {page.id} — {page.get_browseable_url()}"
+            count, failures = _add_blocks_from_specs(page, json.loads(blocks))
+        msg = f"Created page {page.id} — {page.get_browseable_url()}"
+        if failures:
+            added = f", added {count} of {count + len(failures)} block(s)" if blocks else ""
+            msg += f" ({'; '.join(failures)})"
+        return msg
 
     @mcp.tool()
     def append_blocks(
@@ -2088,7 +2144,12 @@ if _WRITE_ENABLED:
         parent = client.get_block(page_id)
         if parent is None:
             return f"Page not found: {page_id}"
-        count = _add_blocks_from_specs(parent, json.loads(blocks))
+        count, failures = _add_blocks_from_specs(parent, json.loads(blocks))
+        if failures:
+            return (
+                f"Added {count} of {count + len(failures)} block(s) to {page_id}; "
+                + "; ".join(failures)
+            )
         return f"Added {count} block(s) to {page_id}"
 
     @mcp.tool()

@@ -6,6 +6,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-09-29
+
+### Fixed
+- **`search` / `list_pages` dead on v1.3.0** (#21): `_block_summary`
+  returned `title_markdown` from an unassigned variable (NameError on
+  every call). It now carries both title forms and tolerates read errors.
+- **`append_blocks` todo with `checked` fails** (#18): any block property
+  set through `Record.set` on a `["properties", <key>]` path other than
+  `title` now emits the high-level `updateBlockPropertyValue` operation
+  Notion requires (extends the #17 fix beyond database rows). A smoke
+  test guards the regression.
+- **`get_page` rendered code blocks as raw rich-text arrays** (#20):
+  `CodeBlock.title` now flattens the stored `[[text, …]]` segments back
+  to verbatim text on reads (the #8 fix added write-side verbatim, but no
+  read converter). MCP and CLI renderers also emit the language on the
+  fence (```` ```python ````).
+- **`append_blocks` / `create_page(blocks=…)` partial-write traps** (#19):
+  each block is now created and its properties written in ONE transaction
+  (a failing property write no longer leaves an empty shell), one spec's
+  failure no longer aborts the batch, failures are reported per block
+  (`Added 2 of 3 block(s) …; block 3 (todo) failed: <debugMessage>`) and
+  the server's `debugMessage` is surfaced instead of a bare tool error.
+- **MCP read tools served stale data** (#22): `get_page`, `get_block`,
+  `get_database`, `query_database` accept `refresh: bool = true` and
+  force a server refresh of the root record before reading; `export`
+  always refreshes. Cache now lives only within a single tool call.
+
+### Added
+- Tests for all five fixes (226 total); tool registration test asserts
+  the `refresh` parameter is present on `get_page`.
+
 ## [1.3.0] - 2026-09-28
 
 ### Added

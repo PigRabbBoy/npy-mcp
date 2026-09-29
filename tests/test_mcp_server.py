@@ -90,6 +90,7 @@ class TestToolSchemas:
             schema = page_tool.input_schema
             assert "page_id" in schema.get("properties", {})
             assert "depth" in schema.get("properties", {})
+            assert "refresh" in schema.get("properties", {})  # issue #22
 
 
 class TestBlockTypes:
