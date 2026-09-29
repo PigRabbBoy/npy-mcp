@@ -6,6 +6,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-29
+
+Performance overhaul (grilling session design: bench-first, milestones
+M0–M5). All changes carry a single escape hatch: set `UNPY_LEGACY=1` to
+restore exact v1.x behavior (no TTL freshness, no batching, no fan-out,
+per-record disk saves, in-memory export unpack).
+
+### Changed (breaking)
+- **Write batching, cap 100 ops/requests** (ADR 0011): `append_blocks`,
+  `create_page(blocks=…)`, `import_csv` and `create_columns` buffer all
+  their operations and flush in chunks capped at `UNPY_BATCH_MAX_OPS`
+  (default 100, post-expansion). A 10k-row CSV import now costs ~100 HTTP
+  requests instead of ~20,000. The unit of failure is the chunk — a
+  rejected chunk stops the flush, earlier chunks stay committed, and the
+  remainder is reported so callers can retry (issue #19 semantics
+  preserved at chunk boundaries). Nested transaction contexts join the
+  outer one (unchanged).
+- **TTL freshness window on forced reads** (ADR 0012): MCP read tools
+  default `force_refresh=True`; inside `UNPY_CACHE_TTL` (default 15s) the
+  cached record is served without a network refresh. After the window
+  expires forced reads fetch as before. `UNPY_CACHE_TTL=0` restores
+  always-refresh. Unforced reads keep exact v1 semantics (never re-fetch
+  cached records). Every write stamps freshness (write-through).
+- **RecordStore read-locked**: all cache reads (`_get`, `get_role`,
+  `get_collection_rows`, `set_collection_rows`, syncRecordValues key
+  listing) now hold the mutex — concurrent reads during writes can no
+  longer raise or miss (prerequisite for fan-out).
+- **Debounced disk persistence**: v1 dumped the FULL store to disk on
+  EVERY record update (O(records²) I/O in bulk operations). v2 marks the
+  attribute dirty and flushes once per second coalesced.
+- **Batched reads**: `Children.__iter__`/`__getitem__`, `get_comments`
+  (one POST for all comment ids), `get_top_level_pages`, and `search`
+  results batch-fetch uncached ids in ONE `syncRecordValues` call,
+  instead of one sequential request per record.
+- **Thread fan-out**: `client.fetch_many_blocks(ids)` resolves blocks
+  concurrently on a machine-aware pool (`min(8, max(2, cores-2))`,
+  override `UNPY_MAX_WORKERS`); the HTTP connection pool is sized to
+  match. Page-tree rendering (`get_page`) uses it per level.
+- **Export streamed to disk**: export zips are unpacked
+  entry-by-entry — huge PDF/HTML archives no longer buffer the whole
+  archive plus every file in RAM (`UNPY_LEGACY=1` keeps the in-memory
+  path).
+- **Bounded caches**: `_SCHEMA_CACHE` capped at 256 (LRU) and the formula
+  AST parse cache at 512; a shared CommonMark parser is reused across
+  conversions (removes per-call parser construction); formula ASTs parse
+  once per source, not per row.
+
+### Added
+- `scripts/bench.py` — benchmark harness (replay mode via vcr cassettes,
+  `--live` mode against real Notion) measuring wall/CPU/traced-memory/RSS
+  per scenario; baseline recorded in `scripts/baselines/`.
+- Dev deps: `pytest-benchmark`, `memory_profiler`, `psutil`.
+- Test suites: `test_perf_batching.py`, `test_perf_store.py`,
+  `test_perf_ttl.py`, `test_perf_fanout.py`, `test_perf_m5.py` (40 tests
+  across the five milestones; total suite now 271).
+
 ## [1.3.2] - 2026-09-29
 
 ### Fixed

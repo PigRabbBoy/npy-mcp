@@ -1,0 +1,58 @@
+[
+  {
+    "scenario": "client_init",
+    "mode": "replay",
+    "repeat": 3,
+    "wall_s": {
+      "min": 0.0207,
+      "median": 0.0212,
+      "max": 0.0242
+    },
+    "cpu_s": 0.0209,
+    "peak_traced_mb": 21.56,
+    "peak_rss_mb": 69.42,
+    "result_type": "NotionClient"
+  },
+  {
+    "scenario": "page_read",
+    "mode": "replay",
+    "repeat": 3,
+    "wall_s": {
+      "min": 0.3567,
+      "median": 0.3578,
+      "max": 0.3621
+    },
+    "cpu_s": 0.0617,
+    "peak_traced_mb": 0.41,
+    "peak_rss_mb": 75.89,
+    "result_type": "list"
+  },
+  {
+    "scenario": "search_read",
+    "mode": "replay",
+    "repeat": 3,
+    "wall_s": {
+      "min": 0.0314,
+      "median": 0.0315,
+      "max": 0.0331
+    },
+    "cpu_s": 0.0312,
+    "peak_traced_mb": 0.4,
+    "peak_rss_mb": 76.28,
+    "result_type": "list"
+  },
+  {
+    "scenario": "markdown_200x",
+    "mode": "replay",
+    "repeat": 3,
+    "wall_s": {
+      "min": 0.1584,
+      "median": 0.1592,
+      "max": 0.1845
+    },
+    "cpu_s": 0.1578,
+    "peak_traced_mb": 0.24,
+    "peak_rss_mb": 76.45,
+    "result_type": "int"
+  }
+]

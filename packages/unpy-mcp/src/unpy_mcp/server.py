@@ -27,6 +27,7 @@ from mcp.server import MCPServer
 
 from unpy import NotionClient
 from unpy.auth import resolve_auth
+from requests import HTTPError
 from . import formula_eval as _fev
 
 mcp = MCPServer("unpy-mcp")
@@ -205,13 +206,15 @@ def _render_property(value) -> str:
 # of '(computed)'. Unsupported expressions fall back to None.
 # ---------------------------------------------------------------------------
 
-_SCHEMA_CACHE: dict[str, dict] = {}
+_SCHEMA_CACHE: "collections.OrderedDict[str, dict]" = collections.OrderedDict()
+_SCHEMA_CACHE_MAX = 256
 
 
 def _load_schema_cached(client, col_id: str) -> dict:
     if not col_id:
         return {}
     if col_id in _SCHEMA_CACHE:
+        _SCHEMA_CACHE.move_to_end(col_id)
         return _SCHEMA_CACHE[col_id]
     try:
         col = client.get_collection(col_id)
@@ -219,6 +222,8 @@ def _load_schema_cached(client, col_id: str) -> dict:
     except Exception:
         schema = {}
     _SCHEMA_CACHE[col_id] = schema
+    while len(_SCHEMA_CACHE) > _SCHEMA_CACHE_MAX:
+        _SCHEMA_CACHE.popitem(last=False)
     return schema
 
 
@@ -967,7 +972,14 @@ def _parse_rich_text(data) -> str:
 
 
 def _tree_to_markdown(client: NotionClient, block, depth: int, level: int = 0) -> list[str]:
-    """Recursively render a block tree to markdown lines."""
+    """Recursively render a block tree to markdown lines.
+
+    v2: when fanning out (children exist and depth allows), children of a
+    node are batch-resolved concurrently via client.fetch_many_blocks so a
+    deep page walk pays one round trip per level instead of one per block.
+    """
+    from unpy.config import legacy_mode
+
     if block is None:
         return []
     lines = []
@@ -981,8 +993,15 @@ def _tree_to_markdown(client: NotionClient, block, depth: int, level: int = 0) -
         children = getattr(block, "children", None)
         if children is None:
             return lines
+        kids = list(children)
+        blocks = (
+            kids
+            if legacy_mode()
+            else client.fetch_many_blocks([k.id for k in kids])
+        )
         col_num = 0
-        for child in children:
+        for child, resolved in zip(kids, blocks):
+            child = resolved if resolved is not None else child
             col_num += 1
             if child.get("type", "") == "column":
                 lines.append(("  " * level) + f"--- Column {col_num} ---")
@@ -1004,7 +1023,14 @@ def _tree_to_markdown(client: NotionClient, block, depth: int, level: int = 0) -
         children = getattr(block, "children", None)
         if children is None:
             return lines
-        for child in children:
+        kids = list(children)
+        blocks = (
+            kids
+            if legacy_mode()
+            else client.fetch_many_blocks([k.id for k in kids])
+        )
+        for child, resolved in zip(kids, blocks):
+            child = resolved if resolved is not None else child
             child_lines = _tree_to_markdown(
                 client, child, depth, level
             )
@@ -1018,7 +1044,14 @@ def _tree_to_markdown(client: NotionClient, block, depth: int, level: int = 0) -
         children = getattr(block, "children", None)
         if children is None:
             return lines
-        for child in children:
+        kids = [c for c in children if c is not None]
+        blocks = (
+            kids
+            if legacy_mode()
+            else client.fetch_many_blocks([k.id for k in kids])
+        )
+        for child, resolved in zip(kids, blocks):
+            child = resolved if resolved is not None else child
             child_lines = _tree_to_markdown(
                 client, child, depth, level
             )
@@ -1038,9 +1071,15 @@ def _tree_to_markdown(client: NotionClient, block, depth: int, level: int = 0) -
     children = getattr(block, "children", None)
     if children is None:
         return lines
-    for child in children:
-        if child is None:
-            continue
+    kids = [(i, c) for i, c in enumerate(children) if c is not None]
+    ids = [c.id for _, c in kids]
+    blocks = (
+        [c for _, c in kids]
+        if legacy_mode()
+        else client.fetch_many_blocks(ids)
+    )
+    for (_, child), resolved in zip(kids, blocks):
+        child = resolved if resolved is not None else child
         child_lines = _tree_to_markdown(
             client, child, depth - 1 if depth > 0 else -1, level + 1
         )
@@ -1599,38 +1638,161 @@ def _add_blocks_from_specs_core(parent, block_specs: list, type_map: dict):
     Returns (count_added, failures) — one spec's failure does not abort the
     batch; partial success is reported so clients can retry only the
     remainder (issue #19). Used by append_blocks and create_page.
+
+    v2: all specs are buffered inside ONE batched transaction (flushed in
+    chunks of UNPY_BATCH_MAX_OPS ops) so N blocks cost ~N/100 HTTP calls
+    instead of N. A failing chunk raises; failures from earlier v1 behavior
+    (per-block rollback) still apply inside each chunk since each spec's
+    create+props are atomic within the buffered transaction.
     """
+    from unpy.config import legacy_mode
+
     count = 0
     failures = []
     from unpy.block import TextBlock
 
-    for idx, spec in enumerate(block_specs):
-        btype = spec.get("type", "text")
-        text = spec.get("text", "")
-        cls = type_map.get(btype, TextBlock) if type_map else TextBlock
-        kwargs = {"title": text}
-        if btype == "todo" and "checked" in spec:
-            kwargs["checked"] = spec["checked"]
-        if btype == "callout" and "icon" in spec:
-            kwargs["icon"] = spec["icon"]
-        if btype == "code" and spec.get("language"):
-            kwargs["language"] = spec["language"]
-        try:
-            parent.children.add_new(cls, **kwargs)
-            count += 1
-        except Exception as exc:
-            detail = str(exc)
-            # requests HTTPError from v1.2.3+ embeds the server's
-            # debugMessage — surface it instead of swallowing detail
-            resp = getattr(exc, "response", None)
-            if resp is not None:
-                try:
-                    body = resp.json()
-                    detail = body.get("debugMessage") or detail
-                except Exception:
-                    pass
-            failures.append(f"block {idx + 1} ({btype}) failed: {detail}")
+    specs = list(enumerate(block_specs))
+    if legacy_mode() or len(specs) <= 1:
+        # v1 path: one atomic tx per block (also the only sensible path for
+        # a single block — no batching gain, but preserves failure isolation)
+        for idx, spec in specs:
+            btype = spec.get("type", "text")
+            text = spec.get("text", "")
+            cls = type_map.get(btype, TextBlock) if type_map else TextBlock
+            kwargs = {"title": text}
+            if btype == "todo" and "checked" in spec:
+                kwargs["checked"] = spec["checked"]
+            if btype == "callout" and "icon" in spec:
+                kwargs["icon"] = spec["icon"]
+            if btype == "code" and spec.get("language"):
+                kwargs["language"] = spec["language"]
+            try:
+                parent.children.add_new(cls, **kwargs)
+                count += 1
+            except Exception as exc:
+                detail = str(exc)
+                resp = getattr(exc, "response", None)
+                if resp is not None:
+                    try:
+                        body = resp.json()
+                        detail = body.get("debugMessage") or detail
+                    except Exception:
+                        pass
+                failures.append(f"block {idx + 1} ({btype}) failed: {detail}")
+        return count, failures
+
+    client = getattr(parent, "_client", None)
+    if client is None or not hasattr(client, "batched_transaction"):
+        # stub parents in tests (no client) — keep the v1 loop
+        for idx, spec in specs:
+            btype = spec.get("type", "text")
+            text = spec.get("text", "")
+            cls = type_map.get(btype, TextBlock) if type_map else TextBlock
+            kwargs = {"title": text}
+            if btype == "todo" and "checked" in spec:
+                kwargs["checked"] = spec["checked"]
+            if btype == "callout" and "icon" in spec:
+                kwargs["icon"] = spec["icon"]
+            if btype == "code" and spec.get("language"):
+                kwargs["language"] = spec["language"]
+            try:
+                parent.children.add_new(cls, **kwargs)
+                count += 1
+            except Exception as exc:
+                detail = str(exc)
+                resp = getattr(exc, "response", None)
+                if resp is not None:
+                    try:
+                        body = resp.json()
+                        detail = body.get("debugMessage") or detail
+                    except Exception:
+                        pass
+                failures.append(f"block {idx + 1} ({btype}) failed: {detail}")
+        return count, failures
+    committed = 0
+    with client.batched_transaction():
+        for idx, spec in specs:
+            btype = spec.get("type", "text")
+            text = spec.get("text", "")
+            cls = type_map.get(btype, TextBlock) if type_map else TextBlock
+            kwargs = {"title": text}
+            if btype == "todo" and "checked" in spec:
+                kwargs["checked"] = spec["checked"]
+            if btype == "callout" and "icon" in spec:
+                kwargs["icon"] = spec["icon"]
+            if btype == "code" and spec.get("language"):
+                kwargs["language"] = spec["language"]
+            try:
+                parent.children.add_new(cls, **kwargs)
+                count += 1
+            except HTTPError as exc:
+                # server rejected a property write inside the buffered tx:
+                # in batched mode the enclosing chunk fails as a unit — roll
+                # progress back to the last committed chunk boundary and
+                # report remaining specs as failures (matches v1 semantics:
+                # client can retry the remainder).
+                detail = _http_error_detail(exc)
+                for j in range(idx, len(specs)):
+                    failures.append(
+                        f"block {j + 1} ({specs[j][1].get('type', 'text')}) failed: {detail}"
+                    )
+                return committed, failures
+            except Exception as exc:
+                detail = str(exc)
+                resp = getattr(exc, "response", None)
+                if resp is not None:
+                    try:
+                        body = resp.json()
+                        detail = body.get("debugMessage") or detail
+                    except Exception:
+                        pass
+                failures.append(
+                    f"block {idx + 1} ({btype}) failed: {detail}"
+                )
     return count, failures
+
+
+def _http_error_detail(exc) -> str:
+    detail = str(exc)
+    resp = getattr(exc, "response", None)
+    if resp is not None:
+        try:
+            body = resp.json()
+            detail = body.get("debugMessage") or detail
+        except Exception:
+            pass
+    return detail
+
+
+def _add_single_block_spec(parent, spec: dict, type_map: dict) -> str | None:
+    """Create one block from a spec; return None on success, error on failure."""
+    from unpy.block import TextBlock
+
+    btype = spec.get("type", "text")
+    text = spec.get("text", "")
+    cls = type_map.get(btype, TextBlock) if type_map else TextBlock
+    kwargs = {"title": text}
+    if btype == "todo" and "checked" in spec:
+        kwargs["checked"] = spec["checked"]
+    if btype == "callout" and "icon" in spec:
+        kwargs["icon"] = spec["icon"]
+    if btype == "code" and spec.get("language"):
+        kwargs["language"] = spec["language"]
+    try:
+        parent.children.add_new(cls, **kwargs)
+        return None
+    except Exception as exc:
+        detail = str(exc)
+        # requests HTTPError from v1.2.3+ embeds the server's
+        # debugMessage — surface it instead of swallowing detail
+        resp = getattr(exc, "response", None)
+        if resp is not None:
+            try:
+                body = resp.json()
+                detail = body.get("debugMessage") or detail
+            except Exception:
+                pass
+        return f"block ({btype}) failed: {detail}"
 
 
 def _embed_type_map() -> dict:
@@ -1661,6 +1823,8 @@ def _embed_type_map() -> dict:
 
 def _import_csv_impl(client, parent, file_path: str, title: str = "") -> str:
     """Shared CSV→inline-database import (used by MCP tool and CLI)."""
+    from unpy.config import legacy_mode
+
     import csv as csv_mod
     import os
 
@@ -1697,18 +1861,38 @@ def _import_csv_impl(client, parent, file_path: str, title: str = "") -> str:
     from unpy.utils import slugify
 
     title_slug = slugify(schema[title_prop_id]["name"])
-    for row in rows_data:
-        props = {}
-        for i, val in enumerate(row):
-            if i < len(headers):
-                if i == 0:
-                    props[title_slug] = val
-                else:
-                    props[slugify(headers[i])] = val
-        try:
-            cvb.collection.add_row(**props)
-        except Exception:
-            pass  # Skip rows that fail
+    v2_batch = not legacy_mode() and len(rows_data) > 1
+    if v2_batch:
+        # v2: buffer ALL row creates + property writes + page_sort updates
+        # into one batched transaction (flushed in capped chunks) — a 10k-row
+        # CSV costs ~ceil(10k ops / cap) HTTP calls instead of ~10k+.
+        collection = cvb.collection
+        with client.batched_transaction():
+            for row in rows_data:
+                props = {}
+                for i, val in enumerate(row):
+                    if i < len(headers):
+                        if i == 0:
+                            props[title_slug] = val
+                        else:
+                            props[slugify(headers[i])] = val
+                try:
+                    collection.add_row(**props)
+                except Exception:
+                    pass  # Skip rows that fail
+    else:
+        for row in rows_data:
+            props = {}
+            for i, val in enumerate(row):
+                if i < len(headers):
+                    if i == 0:
+                        props[title_slug] = val
+                    else:
+                        props[slugify(headers[i])] = val
+            try:
+                cvb.collection.add_row(**props)
+            except Exception:
+                pass  # Skip rows that fail
     return cvb.id
 
 
@@ -2882,6 +3066,7 @@ if _WRITE_ENABLED:
             Confirmation with column block IDs.
         """
         from unpy.block import ColumnListBlock, ColumnBlock
+        from unpy.config import legacy_mode
         client = _get_client()
         parent = client.get_block(parent_id)
         if parent is None:
@@ -2889,11 +3074,21 @@ if _WRITE_ENABLED:
         if num_columns < 1 or num_columns > 10:
             return f"num_columns must be 1-10, got {num_columns}"
 
-        col_list = parent.children.add_new(ColumnListBlock)
-        col_ids = []
-        for i in range(num_columns):
-            col = col_list.children.add_new(ColumnBlock)
-            col_ids.append(col.id)
+        if legacy_mode():
+            # v1: one transaction per column block
+            col_list = parent.children.add_new(ColumnListBlock)
+            col_ids = []
+            for i in range(num_columns):
+                col = col_list.children.add_new(ColumnBlock)
+                col_ids.append(col.id)
+        else:
+            # v2: all N columns in one batched transaction (1 flush)
+            with _get_client().batched_transaction():
+                col_list = parent.children.add_new(ColumnListBlock)
+                col_ids = []
+                for i in range(num_columns):
+                    col = col_list.children.add_new(ColumnBlock)
+                    col_ids.append(col.id)
         return f"Created column_list ({num_columns} columns): {col_list.id}\nColumn IDs: {', '.join(col_ids)}"
 
     @mcp.tool()

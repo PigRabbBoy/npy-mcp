@@ -1,6 +1,7 @@
 import datetime
 import json
 import threading
+import time
 import uuid
 
 from collections import defaultdict
@@ -13,6 +14,7 @@ from tzlocal import get_localzone
 
 from .logger import logger
 from .settings import CACHE_DIR
+from . import settings as _settings
 from .utils import extract_id
 
 
@@ -84,11 +86,32 @@ class RecordStore(object):
         self._callbacks = defaultdict(lambda: defaultdict(list))
         self._records_to_refresh = {}
         self._pages_to_refresh = []
+        # v2: debounce disk persistence — a dirty flag + a single background
+        # flush instead of a full-store json.dump on every record update
+        self._cache_dirty = set()
+        self._cache_flush_timer = None
+        self._cache_flush_lock = Lock()
+        # v2: freshness timestamps per (table, id) for the TTL cache —
+        # reads within `cache_ttl_seconds` of the last sync skip the net
+        self._fetched_at = defaultdict(dict)
         with self._mutex:
             self._load_cache()
 
+    def _record_is_fresh(self, table, id):
+        """True when the cached record is inside the TTL window (v2)."""
+        from .config import cache_ttl_seconds, legacy_mode
+
+        ttl = cache_ttl_seconds()
+        if legacy_mode() or ttl <= 0:
+            return False
+        fetched = self._fetched_at.get(table, {}).get(id)
+        if fetched is None:
+            return False
+        return (time.monotonic() - fetched) < ttl
+
     def _get(self, table, id):
-        return self._values[table].get(id, Missing)
+        with self._mutex:
+            return self._values[table].get(id, Missing)
 
     def add_callback(self, record, callback, callback_id=None, extra_kwargs={}):
         assert callable(
@@ -113,8 +136,10 @@ class RecordStore(object):
             callbacks.remove(callback_or_callback_id_prefix)
 
     def _get_cache_path(self, attribute):
+        # resolve lazily so tests can monkeypatch settings.CACHE_DIR
+        cache_dir = _settings.CACHE_DIR
         return str(
-            Path(CACHE_DIR).joinpath("{}{}.json".format(self._cache_key, attribute))
+            Path(cache_dir).joinpath("{}{}.json".format(self._cache_key, attribute))
         )
 
     def _load_cache(self, attributes=("_values", "_role", "_collection_row_ids")):
@@ -132,33 +157,66 @@ class RecordStore(object):
                 pass
 
     def set_collection_rows(self, collection_id, row_ids):
-
-        if collection_id in self._collection_row_ids:
-            old_ids = set(self._collection_row_ids[collection_id])
+        with self._mutex:
+            if collection_id in self._collection_row_ids:
+                old_ids = set(self._collection_row_ids[collection_id])
+            else:
+                old_ids = set()
             new_ids = set(row_ids)
             added = new_ids - old_ids
             removed = old_ids - new_ids
-            for id in added:
-                self._trigger_callbacks(
-                    "collection",
-                    collection_id,
-                    [("row_added", "rows", id)],
-                    old_ids,
-                    new_ids,
-                )
-            for id in removed:
-                self._trigger_callbacks(
-                    "collection",
-                    collection_id,
-                    [("row_removed", "rows", id)],
-                    old_ids,
-                    new_ids,
-                )
-        self._collection_row_ids[collection_id] = row_ids
-        self._save_cache("_collection_row_ids")
+            self._collection_row_ids[collection_id] = row_ids
+            self._mark_cache_dirty("_collection_row_ids")
+        for id in sorted(added):
+            self._trigger_callbacks(
+                "collection",
+                collection_id,
+                [("row_added", "rows", id)],
+                old_ids,
+                new_ids,
+            )
+        for id in sorted(removed):
+            self._trigger_callbacks(
+                "collection",
+                collection_id,
+                [("row_removed", "rows", id)],
+                old_ids,
+                new_ids,
+            )
 
     def get_collection_rows(self, collection_id):
-        return self._collection_row_ids.get(collection_id, [])
+        with self._mutex:
+            return list(self._collection_row_ids.get(collection_id, []))
+
+    def _mark_cache_dirty(self, attribute):
+        """Queue a debounced background flush of the disk cache (v2).
+
+        v1 dumps the FULL store to disk on EVERY record update — O(records²)
+        disk I/O during bulk operations. v2 marks the attribute dirty and
+        schedules a single flush 1s out, coalescing bursts of updates.
+        """
+        if not self._cache_key:
+            return
+        self._cache_dirty.add(attribute)
+        with self._cache_flush_lock:
+            if self._cache_flush_timer is None:
+                self._cache_flush_timer = threading.Timer(
+                    1.0, self._flush_cache_timer_cb
+                )
+                self._cache_flush_timer.daemon = True
+                self._cache_flush_timer.start()
+
+    def _flush_cache_timer_cb(self):
+        # Timer thread entry point — exceptions must not kill the timer
+        try:
+            self._cache_flush_timer = None
+            with self._mutex:
+                dirty = set(self._cache_dirty)
+                self._cache_dirty.clear()
+            for attribute in dirty:
+                self._save_cache(attribute)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("Debounced cache flush failed: {}".format(exc))
 
     def _save_cache(self, attribute):
         if not self._cache_key:
@@ -172,12 +230,19 @@ class RecordStore(object):
 
     def get_role(self, table, id, force_refresh=False):
         self.get(table, id, force_refresh=force_refresh)
-        return self._role[table].get(id, None)
+        with self._mutex:
+            return self._role[table].get(id, None)
 
     def get(self, table, id, force_refresh=False, limit=100):
         id = extract_id(id)
         # look up the record in the current local dataset
         result = self._get(table, id)
+        # v2 TTL cache: a record fetched within the window counts as fresh —
+        # even an explicit force_refresh skips the network inside the window
+        # (that is the freshness tradeoff v2 makes; UNPY_CACHE_TTL=0 or
+        # UNPY_LEGACY=1 restores always-refresh)
+        if result is not Missing and self._record_is_fresh(table, id):
+            return result
         # if it's not found, try refreshing the record from the server
         if result is Missing or force_refresh:
             if table == "block":
@@ -218,7 +283,7 @@ class RecordStore(object):
             if role:
                 logger.debug("Updating 'role' for {}/{} to {}".format(table, id, role))
                 self._role[table][id] = role
-                self._save_cache("_role")
+                self._mark_cache_dirty("_role")
             if value:
                 logger.debug(
                     "Updating 'value' for {}/{} to {}".format(table, id, value)
@@ -233,7 +298,10 @@ class RecordStore(object):
                     )
                 )
                 self._values[table][id] = value
-                self._save_cache("_values")
+                # v2: stamp freshness for the TTL cache; local replay ops
+                # count as fresh too (they mirror what the server accepted)
+                self._fetched_at[table][id] = time.monotonic()
+                self._mark_cache_dirty("_values")
                 if old_val and difference:
                     logger.debug("Value changed! Difference: {}".format(difference))
                     callback_queue.append((table, id, difference, old_val, value))
@@ -255,7 +323,8 @@ class RecordStore(object):
 
             # ensure "ids" is a proper list
             if ids is True:
-                ids = list(self._values.get(table, {}).keys())
+                with self._mutex:
+                    ids = list(self._values.get(table, {}).keys())
             if isinstance(ids, str):
                 ids = [ids]
 

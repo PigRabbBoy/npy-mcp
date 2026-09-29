@@ -118,3 +118,39 @@ change only the `unpy-mcp` entry, save — never touching other entries —
 after copying the original to a timestamped `.bak-*` backup. Re-running the
 Installer updates the existing entry in place.
 _Avoid_: overwrite, replace, reset
+
+**Batched Write**:
+Buffering many Write Operations and flushing them to Notion in chunks
+capped at 100 operations per request. The unit of failure is the chunk: a
+rejected chunk stops the flush (earlier chunks stay committed) and the
+client may retry the remainder.
+_Avoid_: bulk write, multi-op commit, mega transaction
+
+**Batched Read**:
+Fetching many records in ONE `syncRecordValues` call instead of one call
+per record. The unit is the id list — a page's children, a search result
+set, a comment thread.
+_Avoid_: prefetch, prefetch, mass load
+
+**I/O Fan-out**:
+Running independent network reads concurrently on a small thread pool
+(machine-aware size, capped at 8). Order of results is preserved.
+_Avoid_: multithreading, parallel API, async
+
+**Transaction**:
+A buffered group of Write Operations submitted atomically as one
+`saveTransactionsFanout` request. Nested transaction contexts join the
+outer one instead of flushing independently.
+_Avoid_: batch, request, commit (for the client-side context manager)
+
+**Freshness Window**:
+The TTL period (default 15s) during which a locally cached Record is
+served to reads without contacting the server — even when a Page Read
+asks for a forced refresh. Zero or `UNPY_LEGACY=1` disables it.
+_Avoid_: cache age, TTL cache, stale window
+
+**Escape Hatch**:
+`UNPY_LEGACY=1` — a single switch that restores every v1 behavior
+(no TTL freshness, no Batched Write, no I/O Fan-out, per-record disk
+saves, in-memory export unpack).
+_Avoid_: legacy mode, compat mode, rollback flag

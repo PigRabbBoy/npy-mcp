@@ -49,6 +49,27 @@ class Children(object):
     def _content_list(self):
         return self._parent.get(self.child_list_key) or []
 
+    def _prefetch_blocks(self, ids):
+        """Batch-fetch missing child records in ONE syncRecordValues call (v2).
+
+        Children used to hit get_block per id — each uncached child meant a
+        separate loadPageChunk/syncRecordValues round trip. One batched
+        refresh covers the whole list; get_block then resolves from cache.
+        """
+        from .store import Missing
+
+        missing = []
+        for id in ids:
+            block_id = extract_id(id)
+            with self._client._store._mutex:
+                if self._client._store._values["block"].get(block_id, Missing) is Missing:
+                    missing.append(block_id)
+        if missing:
+            try:
+                self._client.refresh_records(block=missing)
+            except Exception:
+                pass  # fall through — per-id get_block still handles misses
+
     def _get_block(self, id):
 
         block = self._client.get_block(id)
@@ -83,15 +104,26 @@ class Children(object):
     def __getitem__(self, key):
         result = self._content_list()[key]
         if isinstance(result, list):
+            self._prefetch_blocks(result)
             return [self._get_block(id) for id in result]
         else:
+            self._prefetch_blocks([result])
             return self._get_block(result)
 
     def __delitem__(self, key):
-        self._get_block(self._content_list()[key]).remove()
+        ids = self._content_list()[key]
+        if isinstance(ids, list):
+            self._prefetch_blocks(ids)
+            for id in ids:
+                self._get_block(id).remove()
+        else:
+            self._prefetch_blocks([ids])
+            self._get_block(ids).remove()
 
     def __iter__(self):
-        return iter(self._get_block(id) for id in self._content_list())
+        ids = self._content_list()
+        self._prefetch_blocks(ids)
+        return iter(self._get_block(id) for id in ids)
 
     def __reversed__(self):
         return reversed(iter(self))
@@ -222,7 +254,14 @@ class Block(Record):
     def children(self):
         if not hasattr(self, "_children"):
             children_ids = self.get("content", [])
-            self._client.refresh_records(block=children_ids)
+            from .config import legacy_mode
+
+            if legacy_mode():
+                # v1: every .children access force-refreshes ALL child ids
+                if children_ids:
+                    self._client.refresh_records(block=children_ids)
+            # v2: first access prefetches only MISSING ids (Children.__iter__
+            # handles it) — batched, one POST, no redundant re-fetch
             self._children = Children(parent=self)
         return self._children
 

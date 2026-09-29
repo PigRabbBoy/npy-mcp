@@ -155,6 +155,33 @@ def unpack_export_zip(zip_bytes):
     return files, single
 
 
+def stream_export_zip_to_files(zip_bytes, output_dir):
+    """Stream an export zip to disk entry-by-entry (v2, low-RAM).
+
+    Instead of materializing every file as bytes in a dict (v1 buffers the
+    whole archive in RAM), each entry is written directly to its target
+    path as it is read from the zip stream. Returns (written paths, text)
+    — `text` is only set when the archive held exactly one file.
+    """
+    written = []
+    single = None
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
+        entries = [i for i in z.infolist() if not i.is_dir()]
+        for info in entries:
+            target = os.path.join(
+                output_dir, *info.filename.replace("\\", "/").split("/")
+            )
+            os.makedirs(os.path.dirname(target) or output_dir, exist_ok=True)
+            with open(target, "wb") as f:
+                f.write(z.read(info))
+            written.append(target)
+        single = entries[0] if len(entries) == 1 else None
+        single_bytes = (
+            written[0] if len(written) == 1 else None
+        )
+    return written, single
+
+
 def write_export_files(files, output_dir):
     """
     Write {relative_path: bytes} under `output_dir`, creating folders as
@@ -220,15 +247,31 @@ def export_block(
     zip_response = client.session.get(export_url, timeout=120)
     zip_response.raise_for_status()
 
-    files, single = unpack_export_zip(zip_response.content)
     output_dir = output_dir or os.getcwd()
     os.makedirs(output_dir, exist_ok=True)
-    written = write_export_files(files, output_dir)
+    # v2: stream entry-by-entry to disk (RAM stays flat even for huge zips);
+    # UNPY_LEGACY=1 keeps the v1 in-memory unpack
+    from .config import legacy_mode
+
+    text = None
+    if legacy_mode():
+        files, single = unpack_export_zip(zip_response.content)
+        written = write_export_files(files, output_dir)
+        if single is not None:
+            try:
+                text = single.decode("utf-8")
+            except UnicodeDecodeError:
+                pass
+    else:
+        written, _ = stream_export_zip_to_files(zip_response.content, output_dir)
+        if len(written) == 1:
+            try:
+                with open(written[0], "rb") as f:
+                    text = f.read().decode("utf-8")
+            except (UnicodeDecodeError, OSError):
+                text = None
 
     result = {"files": written, "output_dir": output_dir}
-    if single is not None:
-        try:
-            result["text"] = single.decode("utf-8")
-        except UnicodeDecodeError:
-            pass
+    if text is not None:
+        result["text"] = text
     return result

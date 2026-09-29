@@ -18,6 +18,7 @@ from .collection import (
     COLLECTION_VIEW_TYPES,
     TemplateBlock,
 )
+from .config import batch_max_ops
 from .logger import logger
 from .monitor import Monitor
 from .operations import operation_update_last_edited, build_operation
@@ -85,7 +86,13 @@ def create_session(client_specified_retry=None):
                 "DELETE",
             ),
         )
-    adapter = HTTPAdapter(max_retries=retry)
+    # v2: size the connection pool to the fan-out worker count so threads
+    # don't queue behind urllib3's default pool of 10 (or fight with
+    # pool_block=True-style serialization)
+    from .config import max_workers
+
+    pool = max(10, max_workers() * 2)
+    adapter = HTTPAdapter(max_retries=retry, pool_connections=pool, pool_maxsize=pool)
     session.mount("https://", adapter)
     # Mimic browser headers to avoid bot detection / rate-limit differences
     session.headers.update({
@@ -213,7 +220,14 @@ class NotionClient(object):
 
     def get_top_level_pages(self):
         records = self._update_user_info()
-        return [self.get_block(bid) for bid in records["block"].keys()]
+        block_ids = list(records["block"].keys())
+        # v2: one batched fetch for all top-level page ids (was sequential)
+        if block_ids:
+            try:
+                self.refresh_records(block=block_ids)
+            except Exception:
+                pass
+        return [self.get_block(bid) for bid in block_ids]
 
     def get_comments(self, block_id, include_resolved=True):
         """Return all discussions + comments attached to a block (page).
@@ -255,6 +269,9 @@ class NotionClient(object):
             return []
         recordmap = resp.get("recordMap", {})
         discussions = []
+        dval_map = {}
+        fresh_comment_ids = {}
+        all_comment_ids = set()
         for did, drec in (recordmap.get("discussion") or {}).items():
             dval = ((drec or {}).get("value") or {}).get("value") or drec.get(
                 "value"
@@ -272,9 +289,21 @@ class NotionClient(object):
                     fv = fv["value"]
                 if isinstance(fv, dict):
                     dval = fv
+            dval_map[did] = dval
+            fresh_comment_ids[did] = list(dval.get("comments") or [])
+            all_comment_ids.update(fresh_comment_ids[did])
+        # v2: ONE batched syncRecordValues for every fresh comment id, then
+        # resolve locally — was one POST per comment (sequentially)
+        if all_comment_ids:
+            try:
+                self.refresh_records(comment=sorted(all_comment_ids))
+            except Exception:
+                pass
+        for did, dval in dval_map.items():
             comments = []
-            for cid in dval.get("comments") or []:
-                crec = self._store.get("comment", cid)
+            for cid in fresh_comment_ids.get(did) or []:
+                with self._store._mutex:
+                    crec = self._store._values["comment"].get(cid)
                 creval = creval_get(crec)
                 if not creval:
                     continue
@@ -563,6 +592,20 @@ class NotionClient(object):
         if self.in_transaction():
             self._transaction_operations += operations
         else:
+            # v2: enforce the batch cap on the FINAL (expanded) op list so
+            # each HTTP request carries at most batch_max_ops operations
+            cap = batch_max_ops()
+            if cap and len(operations) > cap:
+                from .config import legacy_mode
+                ops = operations
+                total = 0
+                for i in range(0, len(ops), cap):
+                    chunk = ops[i : i + cap]
+                    data = self._build_save_transactions_payload(chunk)
+                    self.post("saveTransactionsFanout", data)
+                    self._store.run_local_operations(chunk)
+                    total += len(chunk)
+                return
             data = self._build_save_transactions_payload(operations)
             self.post("saveTransactionsFanout", data)
             self._store.run_local_operations(operations)
@@ -598,6 +641,87 @@ class NotionClient(object):
                 }
             ],
         }
+
+    def fetch_many_blocks(self, block_ids):
+        """Fetch many blocks in parallel (v2 I/O fan-out).
+
+        Uses a ThreadPoolExecutor (UNPY_MAX_WORKERS, machine-aware default)
+        to resolve records concurrently. Thread-safety requires the v2
+        RecordStore (read-locked); UNPY_LEGACY=1 serializes to one worker.
+        Deduplicates ids and preserves input order in the result.
+
+        Returns a list of Block (or None for unresolvable ids) in the same
+        order as `block_ids`.
+        """
+        from concurrent.futures import ThreadPoolExecutor
+
+        from .config import legacy_mode, max_workers
+
+        # dedupe but keep first-seen order
+        seen = {}
+        for bid in block_ids:
+            key = extract_id(bid)
+            seen.setdefault(key, bid)
+        unique_ids = list(seen.keys())
+        if not unique_ids:
+            return []
+
+        workers = 1 if legacy_mode() else max_workers()
+        if workers <= 1:
+            results = [self.get_block(bid) for bid in unique_ids]
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                results = list(pool.map(self.get_block, unique_ids))
+
+        by_id = {}
+        for b in results:
+            if b is not None:
+                by_id[b.id] = b
+        out = [by_id.get(extract_id(bid)) for bid in block_ids]
+        return out
+
+    def batched_transaction(self):
+        """
+        Context manager that buffers operations like as_atomic_transaction but
+        flushes them in chunks of `batch_max_ops` (default 100) so writing N
+        blocks costs ~N/100 HTTP round trips instead of N. Each chunk is
+        submitted as its own transaction; a chunk that fails raises and stops
+        the flush (earlier chunks are already committed). Yields a callback
+        that reports committed-chunk progress.
+        """
+        from .config import batch_max_ops
+
+        cap = batch_max_ops()
+        if cap <= 0:
+            return self.as_atomic_transaction()
+        return _BatchedTransaction(self, cap)
+
+    def flush_batched(self, iterator):
+        """Submit operations from an iterable in chunks of batch_max_ops.
+
+        Yields (first_index, op_count, committed_ops_total) after each chunk,
+        counting DATA operations (the caller's own ops, before any
+        update_last_edited expansion the submit path may append). Raises on
+        the first failed chunk — later chunks are not attempted.
+        """
+        from .config import batch_max_ops
+
+        cap = batch_max_ops()
+        chunk, base, total = [], 0, 0
+        for op in iterator:
+            chunk.append(op)
+            if len(chunk) >= cap:
+                # submit a copy: the submit path extends the list it is
+                # given (update_last_edited) and must not alias our cursor
+                self.submit_transaction(list(chunk))
+                total += len(chunk)
+                yield base, len(chunk), total
+                base += len(chunk)
+                chunk = []
+        if chunk:
+            self.submit_transaction(list(chunk))
+            total += len(chunk)
+            yield base, len(chunk), total
 
     def query_collection(self, *args, **kwargs):
         return self._store.call_query_collection(*args, **kwargs)
@@ -667,7 +791,22 @@ class NotionClient(object):
         }
         response = self.post("search", data).json()
         self._store.store_recordmap(response["recordMap"])
-        return [self.get_block(result["id"]) for result in response["results"]]
+        result_ids = [result["id"] for result in response["results"]]
+        # v2: one batched fetch for any results the recordMap didn't already
+        # include (was one get_block round trip per result)
+        from .store import Missing
+
+        missing = []
+        for rid in result_ids:
+            with self._store._mutex:
+                if self._store._values["block"].get(rid, Missing) is Missing:
+                    missing.append(rid)
+        if missing:
+            try:
+                self.refresh_records(block=missing)
+            except Exception:
+                pass
+        return [self.get_block(rid) for rid in result_ids]
 
     def create_record(self, table, parent, **kwargs):
 
@@ -744,4 +883,35 @@ class Transaction(object):
         if not exc_type:
             self.client.submit_transaction(operations)
 
+        self.client._store.handle_post_transaction_refreshing()
+
+
+class _BatchedTransaction(object):
+    """Like Transaction, but flushes buffered ops in capped chunks on exit."""
+
+    def __init__(self, client, cap):
+        self.client = client
+        self.cap = cap
+
+    def __enter__(self):
+        if hasattr(self.client, "_transaction_operations"):
+            # nested inside an outer transaction — defer to it entirely
+            self.is_dummy_nested_transaction = True
+            return None
+        self.client._transaction_operations = []
+        self.client._pages_to_refresh = []
+        self.client._blocks_to_refresh = []
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if getattr(self, "is_dummy_nested_transaction", False):
+            return
+        operations = self.client._transaction_operations
+        del self.client._transaction_operations
+        if exc_type:
+            self.client._store.handle_post_transaction_refreshing()
+            return
+        # submit as ONE buffered flush; submit_transaction itself enforces the
+        # batch cap on the expanded op list (splitting into capped requests)
+        self.client.submit_transaction(operations)
         self.client._store.handle_post_transaction_refreshing()

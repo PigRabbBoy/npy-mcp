@@ -1,4 +1,20 @@
 import commonmark
+
+_shared_parser = None
+
+
+def get_shared_parser():
+    """One CommonMark parser reused across calls (v2 perf).
+
+    Building a Parser per conversion call dominated profile time for
+    conversion-heavy workloads; a shared instance is safe — CommonMark's
+    parser holds no cross-call state outside parse().
+    """
+    global _shared_parser
+    if _shared_parser is None:
+        _shared_parser = commonmark.Parser()
+    return _shared_parser
+
 import re
 import html
 from xml.dom import minidom
@@ -141,7 +157,7 @@ def markdown_to_notion(markdown):
     # we don't want to touch dashes, so temporarily replace them here
     markdown = markdown.replace("-", "⸻")
 
-    parser = commonmark.Parser()
+    parser = get_shared_parser()
     ast = prepare(parser.parse(markdown))
 
     format = set()

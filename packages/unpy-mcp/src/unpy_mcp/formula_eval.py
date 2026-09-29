@@ -1242,14 +1242,35 @@ def evaluate(prop_schema: dict, ctx):
 
     ctx must provide: resolve_ref(n), member(value, n), eq(a,b),
     person_field(person, which), now(), today(), self_id().
+
+    v2: the (src → AST) parse result is memoized in a bounded cache so
+    evaluating the same column across N rows parses once, not N times.
     """
     src, refs = build_expr(prop_schema)
     if not src.strip():
         raise _Unsupported("empty")
-    parser = Parser(tokenize(src))
-    ast = parser.parse()
+    ast = _resolve_ast(src)
     interp = Interp(ctx)
     return interp.run(ast)
+
+
+_AST_CACHE: dict[str, tuple] = {}
+_AST_CACHE_MAX = 512
+
+
+def _resolve_ast(src: str):
+    """Memoized parse: formula ASTs are deterministic per source string."""
+    cached = _AST_CACHE.get(src)
+    if cached is not None:
+        return cached
+    parser = Parser(tokenize(src))
+    ast = parser.parse()
+    if len(_AST_CACHE) >= _AST_CACHE_MAX:
+        # cheap bound: drop everything once full (formula sources per
+        # database are few; a hard reset keeps memory flat)
+        _AST_CACHE.clear()
+    _AST_CACHE[src] = ast
+    return ast
 
 
 def encode_expr(src: str, prop_meta: dict[str, dict] | None = None) -> list:
