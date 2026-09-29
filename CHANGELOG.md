@@ -6,6 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-09-29
+
+### Fixed
+- `append_blocks` / `create_page` block specs are now validated **up
+  front**, before any write (issue #24). A malformed spec previously
+  aborted the batch halfway — earlier blocks written, later ones skipped,
+  client saw only "Error executing tool append_blocks", and a retry
+  duplicated the already-written blocks. Now:
+  - `blocks` must be a JSON array of objects
+  - `type` must be a string and a **known** type (unknown types no longer
+    silently fall back to `text` — behavior change from #19)
+  - `text` must be a string; `checked` boolean; `icon`/`language` strings
+  - invalid JSON returns a clear error with 0 blocks added
+  - input errors are all-or-nothing (`block 2: expected an object, got
+    str`) so client retries are safe
+- Per-spec write failures keep the #19 partial-success reporting
+  unchanged. 7 new tests (286 total, all passing).
+
 ## [2.0.1] - 2026-09-29
 
 ### Fixed
