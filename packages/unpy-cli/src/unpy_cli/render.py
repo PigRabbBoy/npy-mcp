@@ -150,7 +150,12 @@ def _block_to_markdown(block: Block) -> str:
     if btype == "sub_sub_header":
         return f"### {md}"
     if btype == "to_do":
-        checked = block.get("format.checked", False)
+        # checked lives in properties.checked ([["Yes"]]/[["No"]]) — read the
+        # property_map accessor (format.checked is never populated; issue #23)
+        try:
+            checked = bool(block.checked)
+        except Exception:
+            checked = False
         return f"- [{'x' if checked else ' '}] {md}"
     if btype == "bulleted_list":
         return f"- {md}"

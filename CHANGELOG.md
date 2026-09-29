@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-09-29
+
+### Fixed
+- **`get_page` rendered every to-do as unchecked** (#23): the MCP and CLI
+  renderers read `format.checked`, but the value lives in
+  `properties.checked` (`[["Yes"]]`/`[["No"]]` — where the #18 fix wrote
+  it). Both renderers now read `TodoBlock.checked` (the `property_map`
+  accessor that maps `"Yes"` → `True`). Live-verified in both renderers.
+
 ## [1.3.1] - 2026-09-29
 
 ### Fixed

@@ -333,3 +333,59 @@ class TestIssue22RefreshParams:
         fn = getattr(srv.export, "fn", srv.export)
         src = inspect.getsource(fn)
         assert "force_refresh=True" in src
+
+# ---- issue #23: renderers read properties.checked via the accessor ------------
+
+
+class _FakeTodoForRender:
+    def __init__(self, checked, title="todo text", btype="to_do"):
+        self._checked = checked
+        self._title_md = title
+        self._btype = btype
+
+    def get(self, path, default=None):
+        if path == "type":
+            return self._btype or default
+        return default
+
+    @property
+    def checked(self):
+        if self._checked == "boom":
+            raise RuntimeError("nope")
+        return self._checked
+
+    @property
+    def title(self):
+        return self._title_md
+
+
+class TestIssue23TodoRender:
+    def test_mcp_checked_todo_renders_x(self):
+        from unpy_mcp.server import _block_to_markdown
+
+        out = _block_to_markdown(_FakeTodoForRender(True))
+        assert out == "- [x] todo text"
+
+    def test_mcp_unchecked_todo_renders_space(self):
+        from unpy_mcp.server import _block_to_markdown
+
+        out = _block_to_markdown(_FakeTodoForRender(False))
+        assert out == "- [ ] todo text"
+
+    def test_mcp_checked_error_renders_unchecked(self):
+        from unpy_mcp.server import _block_to_markdown
+
+        out = _block_to_markdown(_FakeTodoForRender("boom"))
+        assert out == "- [ ] todo text"
+
+    def test_cli_checked_todo_renders_x(self):
+        from unpy_cli.render import _block_to_markdown as cli_md
+
+        out = cli_md(_FakeTodoForRender(True))
+        assert out == "- [x] todo text"
+
+    def test_cli_unchecked_todo_renders_space(self):
+        from unpy_cli.render import _block_to_markdown as cli_md
+
+        out = cli_md(_FakeTodoForRender(False))
+        assert out == "- [ ] todo text"
