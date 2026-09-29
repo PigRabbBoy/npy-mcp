@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.3] - 2026-09-29
+
+### Fixed
+- `get_page` right after `append_blocks`/`add_new` no longer lists each
+  newly appended block **twice** (issue #25). Root cause: v2's optimistic
+  local mirror inside `Block.add_new` replays the buffered content
+  `listAfter` op before commit, and `submit_transaction` replayed the same
+  op on commit — the block id ended up twice in the parent's `content`.
+  `RecordStore.run_local_operation` now applies `listAfter`/`listBefore`
+  idempotently (remove-then-insert, exactly one copy), and tolerates an
+  `after`/`before` anchor that isn't present locally (falls back to
+  append/prepend instead of raising `ValueError`).
+- 5 new tests incl. a replay of the exact double-apply op sequence
+  (291 total, all passing).
+
 ## [2.0.2] - 2026-09-29
 
 ### Fixed

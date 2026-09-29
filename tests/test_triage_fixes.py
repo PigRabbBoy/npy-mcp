@@ -325,6 +325,115 @@ class TestIssue24SpecValidation:
         assert failures == []
 
 
+# ---- issue #25: local store double-applies content list ops -------------------
+
+
+class TestIssue25ListOpIdempotency:
+    """listAfter/listBefore replayed twice (optimistic mirror in add_new +
+    commit replay in submit_transaction) must not duplicate the id."""
+
+    def _store(self):
+        from unpy.store import RecordStore
+
+        store = RecordStore.__new__(RecordStore)
+        store._values = {"block": {"parent": {"id": "parent", "content": []}}}
+        store._role = {"block": {}}
+        store._callbacks = {"block": {"parent": []}}
+        from threading import Lock
+
+        store._mutex = Lock()
+        store._pages_to_refresh = []
+        store._records_to_refresh = {}
+        store._fetched_at = {"block": {}}
+        store._cache_key = None  # no disk cache → _mark_cache_dirty no-ops
+
+        class FakeClient:
+            def in_transaction(self):
+                return False
+
+        store._client = FakeClient()
+        return store
+
+    def test_list_after_append_dedupe(self):
+        store = self._store()
+        op = {
+            "table": "block", "id": "parent", "path": ["content"],
+            "command": "listAfter", "args": {"id": "newblock"},
+        }
+        store.run_local_operation(**op)
+        store.run_local_operation(**op)
+        assert store._values["block"]["parent"]["content"] == ["newblock"]
+
+    def test_list_after_positional_dedupe(self):
+        store = self._store()
+        store.run_local_operation(
+            table="block", id="parent", path=["content"],
+            command="listAfter", args={"id": "newblock", "after": "anchor"},
+        )
+        # anchor not present locally (server echo of a later insert) —
+        # no ValueError, falls back to append
+        store.run_local_operation(
+            table="block", id="parent", path=["content"],
+            command="listAfter", args={"id": "newblock", "after": "anchor"},
+        )
+        assert store._values["block"]["parent"]["content"] == ["newblock"]
+
+    def test_list_before_dedupe(self):
+        store = self._store()
+        op = {
+            "table": "block", "id": "parent", "path": ["content"],
+            "command": "listBefore", "args": {"id": "newblock"},
+        }
+        store.run_local_operation(**op)
+        store.run_local_operation(**op)
+        assert store._values["block"]["parent"]["content"] == ["newblock"]
+
+    def test_replay_keeps_position_when_reflowed(self):
+        store = self._store()
+        store.run_local_operation(
+            table="block", id="parent", path=["content"],
+            command="listAfter", args={"id": "head"},
+        )
+        store.run_local_operation(
+            table="block", id="parent", path=["content"],
+            command="listAfter", args={"id": "a"},
+        )
+        store.run_local_operation(
+            table="block", id="parent", path=["content"],
+            command="listAfter", args={"id": "b"},
+        )
+        # server echo reflows b after "head" (a pre-existing child);
+        # b already in list → remove-then-insert, exactly one copy
+        store.run_local_operation(
+            table="block", id="parent", path=["content"],
+            command="listAfter", args={"id": "b", "after": "head"},
+        )
+        content = store._values["block"]["parent"]["content"]
+        assert content == ["head", "b", "a"]
+        assert content.count("b") == 1
+
+    def test_real_ids_survive_replay_of_same_op_set(self):
+        """Simulates the exact #25 flow: ops buffered + optimistically
+        mirrored, then the same ops replayed on commit."""
+        store = self._store()
+        # record creation mirrors through _update_record (as create_record does)
+        store._values["block"].setdefault("newblock", None)
+        store._update_record(
+            "block", "newblock",
+            value={"id": "newblock", "type": "text", "alive": True},
+            role="editor",
+        )
+        ops = [
+            {
+                "table": "block", "id": "parent", "path": ["content"],
+                "command": "listAfter", "args": {"id": "newblock"},
+            },
+        ]
+        store.run_local_operations(ops)  # optimistic mirror in add_new
+        store.run_local_operations(ops)  # commit replay
+        assert store._values["block"]["parent"]["content"].count("newblock") == 1
+
+
 # ---- issue #21: _block_summary defines title_markdown -------------------------
 
 

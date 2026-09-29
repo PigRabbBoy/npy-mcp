@@ -558,13 +558,21 @@ class RecordStore(object):
                 ref.update(args)
         elif command == "listAfter":
             assert isinstance(ref, list)
-            if "after" in args:
+            # idempotent insert (issue #25): ops replayed locally before the
+            # transaction committed (add_new optimistic mirror) must not
+            # duplicate the id when the commit replays them again
+            if args["id"] in ref:
+                ref.remove(args["id"])
+            if "after" in args and args["after"] in ref:
                 ref.insert(ref.index(args["after"]) + 1, args["id"])
             else:
                 ref.append(args["id"])
         elif command == "listBefore":
             assert isinstance(ref, list)
-            if "before" in args:
+            # same idempotency guarantee as listAfter (issue #25)
+            if args["id"] in ref:
+                ref.remove(args["id"])
+            if "before" in args and args["before"] in ref:
                 ref.insert(ref.index(args["before"]), args["id"])
             else:
                 ref.insert(0, args["id"])
