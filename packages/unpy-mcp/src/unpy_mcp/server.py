@@ -1677,6 +1677,15 @@ def _validate_block_specs(block_specs, type_map: dict) -> list[str]:
     return errors
 
 
+def _batch_denominator(specs, failures: list) -> int:
+    """Denominator for the issue-#19 'Added X of N' reports (issue #26): the
+    batch size — not the number of failure messages, which shrinks to the
+    invalid-spec count when up-front validation rejects the whole batch.
+    For a non-list `blocks` payload there is no meaningful batch size, so
+    fall back to the failure-message count."""
+    return len(specs) if isinstance(specs, list) else len(failures)
+
+
 def _add_blocks_from_specs_core(parent, block_specs: list, type_map: dict):
     """Create child blocks from [{type, text, checked?, icon?, language?}] specs.
 
@@ -2361,7 +2370,11 @@ if _WRITE_ENABLED:
             count, failures = _add_blocks_from_specs(page, specs)
         msg = f"Created page {page.id} — {page.get_browseable_url()}"
         if failures:
-            added = f", added {count} of {count + len(failures)} block(s)" if blocks else ""
+            added = (
+                f", added {count} of {_batch_denominator(specs, failures)} block(s)"
+                if blocks
+                else ""
+            )
             msg += f" ({'; '.join(failures)})"
         return msg
 
@@ -2395,7 +2408,8 @@ if _WRITE_ENABLED:
         count, failures = _add_blocks_from_specs(parent, specs)
         if failures:
             return (
-                f"Added {count} of {count + len(failures)} block(s) to {page_id}; "
+                f"Added {count} of {_batch_denominator(specs, failures)} block(s) "
+                f"to {page_id}; "
                 + "; ".join(failures)
             )
         return f"Added {count} block(s) to {page_id}"

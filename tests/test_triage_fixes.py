@@ -613,3 +613,118 @@ class TestIssue23TodoRender:
 
         out = cli_md(_FakeTodoForRender(False))
         assert out == "- [ ] todo text"
+
+
+# ---- issue #26: "Added X of N" denominator counts the batch, not the errors ---
+
+
+class TestIssue26Denominator:
+    """Issue #26: when up-front validation rejects a batch, 'Added 0 of N'
+    counted error MESSAGES (the invalid specs), not the submitted batch."""
+
+    def _fake_append(self, blocks_json):
+        """Drive the append_blocks tool body with a stubbed client."""
+        import importlib
+
+        old = {k: os.environ.get(k) for k in ("NOTION_TOKEN_V2", "NOTION_ALLOW_WRITE")}
+        os.environ["NOTION_TOKEN_V2"] = "test-token"
+        os.environ["NOTION_ALLOW_WRITE"] = "1"
+        try:
+            import unpy_mcp.server as srv
+
+            importlib.reload(srv)
+
+            class FakeChildren:
+                def __init__(self):
+                    self.added = []
+
+                def add_new(self, cls, **kwargs):
+                    self.added.append(kwargs)
+
+            class FakePage:
+                def __init__(self):
+                    self.children = FakeChildren()
+
+            page = FakePage()
+
+            class FakeClient:
+                def get_block(self, _id):
+                    return page
+
+            srv._get_client = lambda: FakeClient()
+            result = srv.append_blocks("pid", blocks_json)  # decorator passes fn through
+            return result, page.children.added
+        finally:
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
+    def test_partial_success_denominator_unchanged(self):
+        # runtime failure path must keep the #19 denominator = batch size
+        from unpy_mcp.server import _add_blocks_from_specs_core
+
+        children = _FakeChildren(fail_on={"to_do"})
+        parent = _FakeParent(children)
+        count, failures = _add_blocks_from_specs_core(
+            parent,
+            [
+                {"type": "text", "text": "one"},
+                {"type": "todo", "text": "two"},
+                {"type": "text", "text": "three"},
+            ],
+            {"text": TextBlock, "todo": TodoBlock},
+        )
+        assert (count, len(failures)) == (2, 1)
+        # denominator reconstructable from the return: count + len(failures) == 3
+
+    def test_append_blocks_validation_batch_size_not_error_count(self):
+        # issue #26 example 1: 3 specs, #2 is not an object → "Added 0 of 3"
+        result, added = self._fake_append(
+            json.dumps(
+                [
+                    {"type": "text", "text": "a"},
+                    "not-an-object",
+                    {"type": "text", "text": "c"},
+                ]
+            )
+        )
+        assert added == []
+        assert result.startswith("Added 0 of 3 block(s)")
+        assert "block 2: expected an object, got str" in result
+
+    def test_append_blocks_multi_invalid_still_batch_size(self):
+        # issue #26 example 2: 6 specs, #2-#6 invalid → "Added 0 of 6"
+        # (5 error messages, but the batch was 6)
+        result, added = self._fake_append(
+            json.dumps(
+                [
+                    {"type": "text", "text": "a"},
+                    "not-an-object",
+                    {"type": 7, "text": "b"},
+                    {"type": "mystery", "text": "c"},
+                    {"type": "text", "text": True},
+                    {"type": "text", "text": "f", "checked": "yes"},
+                ]
+            )
+        )
+        assert added == []
+        assert result.startswith("Added 0 of 6 block(s)")
+        for frag in ("block 2:", "block 3:", "block 4:", "block 5:", "block 6:"):
+            assert frag in result
+
+    def test_non_list_payload_falls_back_to_error_count(self):
+        # blocks = "7" parses to a non-list: no batch size to report
+        result, added = self._fake_append(json.dumps(7))
+        assert added == []
+        assert result.startswith("Added 0 of 1 block(s)")
+        assert "JSON array of objects" in result
+
+    def test_runtime_failure_message_shape_unchanged(self):
+        # non-validation failure keeps the historical wording
+        result, _ = self._fake_append(
+            json.dumps([{"type": "text", "text": "ok"}]),
+        )
+        # one clean success → no denominator path at all
+        assert result == "Added 1 block(s) to pid"

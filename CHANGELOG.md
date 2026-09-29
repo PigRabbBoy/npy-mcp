@@ -6,6 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.4] - 2026-09-29
+
+### Fixed
+- `append_blocks` / `create_page` validation failures now report the
+  correct denominator in the issue-#19 "Added X of N" summary (issue #26):
+  N is the submitted **batch size**, not the number of error messages.
+  When up-front validation rejected a batch, N collapsed to the count of
+  invalid specs (e.g. a 3-block batch with one malformed spec reported
+  "Added 0 of 1"); it now reads "Added 0 of 3 block(s)…" so a client can
+  tell what the original batch contained. Per-block messages are
+  unchanged.
+
+### Fixed (CLI)
+- `unpy append-blocks` / `unpy create-page --blocks` crashed with a
+  tuple-repr count (`Added (2, [..]) block(s)`) since the v2 partial-
+  success refactor: the `(count, failures)` tuple was never unpacked.
+  Both commands now unpack the result, report
+  "Added X of N block(s); …" with the batch-size denominator on stderr,
+  and exit 1 when any spec fails.
+
 ## [2.0.3] - 2026-09-29
 
 ### Fixed

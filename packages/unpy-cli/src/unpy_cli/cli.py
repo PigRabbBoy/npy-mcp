@@ -210,8 +210,16 @@ def create_page(
     if icon:
         page.icon = icon
     if blocks:
-        from unpy_mcp.server import _add_blocks_from_specs
-        _add_blocks_from_specs(page, json.loads(blocks))
+        from unpy_mcp.server import _add_blocks_from_specs, _batch_denominator
+        specs = json.loads(blocks)
+        count, failures = _add_blocks_from_specs(page, specs)
+        if failures:
+            typer.echo(
+                f"Added {count} of {_batch_denominator(specs, failures)} block(s); "
+                + "; ".join(failures),
+                err=True,
+            )
+            raise typer.Exit(1)
     typer.echo(f"Created page {page.id} — {page.get_browseable_url()}")
 
 
@@ -223,13 +231,21 @@ def append_blocks(
 ) -> None:
     """Append blocks to a page. Supports: text, todo, header, subheader, subsubheader, callout, bulleted_list, numbered_list, quote, code (language field), divider, toggle, equation."""
     _check_write_enabled()
-    from unpy_mcp.server import _add_blocks_from_specs
+    from unpy_mcp.server import _add_blocks_from_specs, _batch_denominator
     client = get_client(token_arg=token)
     parent = client.get_block(page_id)
     if parent is None:
         typer.echo(f"Page not found: {page_id}", err=True)
         raise typer.Exit(1)
-    count = _add_blocks_from_specs(parent, json.loads(blocks))
+    specs = json.loads(blocks)
+    count, failures = _add_blocks_from_specs(parent, specs)
+    if failures:
+        typer.echo(
+            f"Added {count} of {_batch_denominator(specs, failures)} block(s) to {page_id}; "
+            + "; ".join(failures),
+            err=True,
+        )
+        raise typer.Exit(1)
     typer.echo(f"Added {count} block(s) to {page_id}")
 
 

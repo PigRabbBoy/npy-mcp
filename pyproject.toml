@@ -1,6 +1,6 @@
 [project]
 name = "unpy"
-version = "2.0.3"
+version = "2.0.4"
 description = "Cookie-based Notion client: core lib + CLI + MCP server"
 requires-python = ">=3.12"
 
