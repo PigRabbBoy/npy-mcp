@@ -1632,6 +1632,51 @@ def export(
 _WRITE_ENABLED = os.environ.get("NOTION_ALLOW_WRITE") == "1"
 
 
+def _validate_block_specs(block_specs, type_map: dict) -> list[str]:
+    """Up-front spec validation (issue #24): reject malformed input before
+    any write so input errors keep the batch all-or-nothing.
+
+    Returns a list of error messages (empty = valid).
+    """
+    errors: list[str] = []
+    if not isinstance(block_specs, list):
+        errors.append(
+            f"blocks must be a JSON array of objects, got {type(block_specs).__name__}"
+        )
+        return errors
+    known = set(type_map) if type_map else None
+    for i, spec in enumerate(block_specs):
+        where = f"block {i + 1}"
+        if not isinstance(spec, dict):
+            errors.append(f"{where}: expected an object, got {type(spec).__name__}")
+            continue
+        btype = spec.get("type", "text")
+        if not isinstance(btype, str):
+            errors.append(
+                f"{where}: 'type' must be a string, got {type(btype).__name__}"
+            )
+            continue
+        if known is not None and btype not in known:
+            errors.append(f"{where}: unknown type '{btype}'")
+        text = spec.get("text", "")
+        if not isinstance(text, str):
+            errors.append(f"{where}: 'text' must be a string, got {type(text).__name__}")
+        checked = spec.get("checked")
+        if checked is not None and not isinstance(checked, bool):
+            errors.append(
+                f"{where}: 'checked' must be a boolean, got {type(checked).__name__}"
+            )
+        icon = spec.get("icon")
+        if icon is not None and not isinstance(icon, str):
+            errors.append(f"{where}: 'icon' must be a string, got {type(icon).__name__}")
+        language = spec.get("language")
+        if language is not None and not isinstance(language, str):
+            errors.append(
+                f"{where}: 'language' must be a string, got {type(language).__name__}"
+            )
+    return errors
+
+
 def _add_blocks_from_specs_core(parent, block_specs: list, type_map: dict):
     """Create child blocks from [{type, text, checked?, icon?, language?}] specs.
 
@@ -1646,6 +1691,12 @@ def _add_blocks_from_specs_core(parent, block_specs: list, type_map: dict):
     create+props are atomic within the buffered transaction.
     """
     from unpy.config import legacy_mode
+
+    # issue #24: validate every spec up front — one bad spec must not
+    # abort the batch with blocks already written
+    validation_errors = _validate_block_specs(block_specs, type_map)
+    if validation_errors:
+        return 0, validation_errors
 
     count = 0
     failures = []
@@ -2303,7 +2354,11 @@ if _WRITE_ENABLED:
         if icon:
             page.icon = icon
         if blocks:
-            count, failures = _add_blocks_from_specs(page, json.loads(blocks))
+            try:
+                specs = json.loads(blocks)
+            except json.JSONDecodeError as exc:
+                return f"Created page {page.id} — {page.get_browseable_url()} (invalid blocks JSON: {exc}; 0 blocks added)"
+            count, failures = _add_blocks_from_specs(page, specs)
         msg = f"Created page {page.id} — {page.get_browseable_url()}"
         if failures:
             added = f", added {count} of {count + len(failures)} block(s)" if blocks else ""
@@ -2333,7 +2388,11 @@ if _WRITE_ENABLED:
         parent = client.get_block(page_id)
         if parent is None:
             return f"Page not found: {page_id}"
-        count, failures = _add_blocks_from_specs(parent, json.loads(blocks))
+        try:
+            specs = json.loads(blocks)
+        except json.JSONDecodeError as exc:
+            return f"Invalid blocks JSON: {exc}; 0 blocks added"
+        count, failures = _add_blocks_from_specs(parent, specs)
         if failures:
             return (
                 f"Added {count} of {count + len(failures)} block(s) to {page_id}; "

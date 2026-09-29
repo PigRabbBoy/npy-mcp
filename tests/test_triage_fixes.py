@@ -10,7 +10,13 @@ _CORE = os.path.join(os.path.dirname(__file__), "..", "packages", "unpy-mcp", "s
 if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
 
-from unpy.block import TodoBlock, CodeBlock, TextBlock
+from unpy.block import (
+    BulletedListBlock,
+    CalloutBlock,
+    CodeBlock,
+    TodoBlock,
+    TextBlock,
+)
 from unpy.operations import build_block_property_update
 from unpy.records import Record
 
@@ -204,10 +210,119 @@ class TestIssue19PartialSuccess:
                 {"type": "text", "text": "ok"},
             ],
         )
-        assert count == 2
+        # issue #24: unknown types are now rejected up front instead of
+        # silently falling back to text — zero writes, per-type error
+        assert count == 0
+        assert children.added == []
+        assert len(failures) == 1
+        assert "block 1" in failures[0]
+        assert "unknown type 'mystery'" in failures[0]
+
+
+# ---- issue #24: up-front validation of malformed block specs ------------------
+
+
+class TestIssue24SpecValidation:
+    def _spec_fn(self):
+        from unpy_mcp.server import _add_blocks_from_specs_core
+
+        TYPE_MAP = {
+            "text": TextBlock,
+            "todo": TodoBlock,
+            "bulleted_list": BulletedListBlock,
+            "code": CodeBlock,
+            "callout": CalloutBlock,
+        }
+        return lambda parent, specs: _add_blocks_from_specs_core(parent, specs, TYPE_MAP)
+
+    def test_non_dict_spec_zero_writes(self):
+        fn = self._spec_fn()
+        children = _FakeChildren()
+        parent = _FakeParent(children)
+        count, failures = fn(
+            parent,
+            [{"type": "text", "text": "ok"}, "not-an-object", {"type": "text", "text": "after"}],
+        )
+        # all-or-nothing for input errors: nothing written
+        assert count == 0
+        assert children.added == []
+        assert len(failures) == 1
+        assert "block 2" in failures[0]
+        assert "expected an object" in failures[0]
+        assert "str" in failures[0]
+
+    def test_blocks_not_a_list(self):
+        fn = self._spec_fn()
+        children = _FakeChildren()
+        parent = _FakeParent(children)
+        count, failures = fn(parent, {"type": "text"})
+        assert count == 0
+        assert children.added == []
+        assert failures and "JSON array of objects" in failures[0]
+
+    def test_unknown_type_rejected(self):
+        fn = self._spec_fn()
+        children = _FakeChildren()
+        parent = _FakeParent(children)
+        count, failures = fn(parent, [{"type": "mystery", "text": "x"}])
+        assert count == 0
+        assert children.added == []
+        assert failures and "unknown type 'mystery'" in failures[0]
+
+    def test_non_string_text_rejected(self):
+        fn = self._spec_fn()
+        children = _FakeChildren()
+        parent = _FakeParent(children)
+        count, failures = fn(
+            parent, [{"type": "bulleted_list", "text": {"bad": "object"}}]
+        )
+        assert count == 0
+        assert children.added == []
+        assert failures and "'text' must be a string" in failures[0]
+
+    def test_non_bool_checked_rejected(self):
+        fn = self._spec_fn()
+        children = _FakeChildren()
+        parent = _FakeParent(children)
+        count, failures = fn(
+            parent, [{"type": "todo", "text": "x", "checked": "yes"}]
+        )
+        assert count == 0
+        assert failures and "'checked' must be a boolean" in failures[0]
+
+    def test_non_string_icon_language_rejected(self):
+        fn = self._spec_fn()
+        children = _FakeChildren()
+        parent = _FakeParent(children)
+        count, failures = fn(
+            parent,
+            [{"type": "callout", "text": "x", "icon": {"bad": 1}}],
+        )
+        assert count == 0
+        assert failures and "'icon' must be a string" in failures[0]
+
+        count, failures = fn(
+            _FakeParent(_FakeChildren()),
+            [{"type": "code", "text": "x", "language": {"bad": 1}}],
+        )
+        assert count == 0
+        assert failures and "'language' must be a string" in failures[0]
+
+    def test_valid_specs_still_pass_validation(self):
+        fn = self._spec_fn()
+        children = _FakeChildren()
+        parent = _FakeParent(children)
+        count, failures = fn(
+            parent,
+            [
+                {"type": "text", "text": "a"},
+                {"type": "todo", "text": "b", "checked": True},
+                {"type": "code", "text": "c", "language": "python"},
+                {"type": "callout", "text": "d", "icon": "x"},
+            ],
+        )
+        assert count == 4
         assert failures == []
-        # unknown type rendered with the TextBlock fallback
-        assert children.added[0][0] == "to_do" or children.added[0][1]["title"] == "x"
 
 
 # ---- issue #21: _block_summary defines title_markdown -------------------------
