@@ -19,7 +19,7 @@
 
 set -euo pipefail
 
-REPO_URL="git+https://github.com/PigRabbBoy/npy-mcp@v1.0.2#subdirectory=packages/unpy-mcp"
+REPO_URL="git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packages/unpy-mcp"
 SERVER_ARGS=(--refresh --from "$REPO_URL" unpy-mcp)
 
 # ---------------------------------------------------------------- utilities
@@ -107,6 +107,8 @@ PYTHON3="${PY3_BIN:-python3}"
 # Each entry: id|label|dual-scope (0/1)
 CLIENT_CATALOG=(
   "claude-desktop|Claude Desktop|0"
+  "gemini|Gemini (desktop app)|0"
+  "gemini-cli|Gemini CLI|0"
   "claude-code|Claude Code|1"
   "cursor|Cursor|1"
   "vscode|VS Code|0"
@@ -131,6 +133,14 @@ detect_installed() {
     claude-desktop)
       [[ "$(uname)" == "Darwin" && -f "$HOME/Library/Application Support/Claude/claude_desktop_config.json" ]] \
         || [[ "$(uname)" != "Darwin" && -f "${XDG_CONFIG_HOME:-$HOME/.config}/Claude/claude_desktop_config.json" ]] ;;
+    gemini)
+      if [[ "$(uname)" == "Darwin" ]]; then
+        [[ -d "$HOME/Library/Application Support/GeminiMacOS" ]] \
+          || [[ -d "$HOME/Library/Application Support/com.google.GeminiMacOS" ]]
+      else
+        [[ -d "${XDG_CONFIG_HOME:-$HOME/.config}/google-gemini" ]]
+      fi ;;
+    gemini-cli)   [[ -f "$HOME/.gemini/settings.json" ]] ;;
     claude-code)  [[ -f "$HOME/.claude.json" ]] ;;
     cursor)       [[ -f "$HOME/.cursor/mcp.json" ]] ;;
     vscode)
@@ -286,6 +296,12 @@ client_paths() {
   # echoes "<config-path>|<scope-used>"
   local client="$1" scope="$2"
   case "$client" in
+    gemini)
+      # Gemini desktop app has no editable config file — it stores custom
+      # local MCP servers in its own Core Data store; handled below.
+      echo "|none" ;;
+    gemini-cli)
+      echo "$HOME/.gemini/settings.json|global" ;;
     claude-desktop)
       if [[ "$(uname)" == "Darwin" ]]; then
         echo "$HOME/Library/Application Support/Claude/claude_desktop_config.json|global"
@@ -348,7 +364,7 @@ except Exception:
     cfg = {}
 entry = {
     "command": uvx,
-    "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.2#subdirectory=packages/unpy-mcp", "unpy-mcp"],
+    "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packages/unpy-mcp", "unpy-mcp"],
     "env": {"NOTION_TOKEN_V2": token},
 }
 if allow == "1":
@@ -390,7 +406,7 @@ if space:
     env["NOTION_SPACE_ID"] = space
 entry = {
     "command": uvx,
-    "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.2#subdirectory=packages/unpy-mcp", "unpy-mcp"],
+    "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packages/unpy-mcp", "unpy-mcp"],
     "env": env,
 }
 mcp["unpy-mcp"] = entry
@@ -438,7 +454,7 @@ if space:
     env["NOTION_SPACE_ID"] = space
 entry = {
     "type": "local",
-    "command": [uvx, "--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.2#subdirectory=packages/unpy-mcp", "unpy-mcp"],
+    "command": [uvx, "--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packages/unpy-mcp", "unpy-mcp"],
     "environment": env,
     "enabled": True,
 }
@@ -452,19 +468,147 @@ print("UPDATED" if existed else "CREATED")
 PYEOF
 }
 
+merge_gemini_desktop() {
+  # Gemini desktop app (macOS) — register the server in its Core Data store
+  # at "$HOME/Library/Application Support/com.google.GeminiMacOS/Data/
+  # custom-local-mcp-servers.store". There is no editable config file, so we
+  # insert a row into the ZPERSISTENTCUSTOMLOCALMCPSERVER table (same shape
+  # as the app's bundled Git/Obsidian servers: command + args, empty env).
+  # NOTE: the store is only written while the Gemini app is NOT running.
+  local file="$1"
+  "$PYTHON3" - "$file" "$UVX_PATH" <<'PYEOF'
+import os, plistlib, sqlite3, sys
+
+path, uvx = sys.argv[1], sys.argv[2]
+if not os.path.exists(path):
+    print("ABSENT"); sys.exit(0)
+
+args = plistlib.dumps(
+    {
+        "$version": 100000,
+        "$archiver": "NSKeyedArchiver",
+        "$top": {"root": plistlib.UID(1)},
+        "$objects": [
+            "$null",
+            {"NS.objects": [], "$class": plistlib.UID(2)},
+            {"$classname": "NSArray", "$classes": ["NSArray", "NSObject"]},
+        ],
+    },
+    fmt=plistlib.FMT_BINARY,
+)
+
+conn = sqlite3.connect(path)
+try:
+    conn.execute("BEGIN IMMEDIATE")
+    row = conn.execute(
+        "SELECT Z_PK FROM ZPERSISTENTCUSTOMLOCALMCPSERVER WHERE ZID='unpy-mcp'"
+    ).fetchone()
+    if row:
+        conn.execute(
+            "UPDATE ZPERSISTENTCUSTOMLOCALMCPSERVER SET ZCOMMAND=?, ZARGUMENTS=?, ZNAME='unpy-mcp', ZSERVERDESCRIPTION='Notion workspace (unpy-mcp)' WHERE ZID='unpy-mcp'",
+            (uvx, args),
+        )
+        status = "UPDATED"
+    else:
+        conn.execute(
+            "INSERT INTO ZPERSISTENTCUSTOMLOCALMCPSERVER (Z_ENT, Z_OPT, ZISBUNDLED, ZCOMMAND, ZID, ZNAME, ZSERVERDESCRIPTION, ZARGUMENTS, ZENVIRONMENTVARIABLES, ZSANDBOXCONFIGDATA, ZSUPPORTEDOPERATIONSDATA) VALUES (1, 1, 0, ?, 'unpy-mcp', 'unpy-mcp', 'Notion workspace (unpy-mcp)', ?, '{}', NULL, NULL)",
+            (uvx, args),
+        )
+        conn.execute(
+            "UPDATE Z_PRIMARYKEY SET Z_MAX = Z_MAX + 1 WHERE Z_NAME='PersistentCustomLocalMcpServer'"
+        )
+        status = "CREATED"
+    conn.commit()
+    print(status)
+except Exception as e:
+    conn.rollback()
+    print(f"ERROR {e}")
+    sys.exit(1)
+finally:
+    conn.close()
+PYEOF
+}
+
+check_gemini_running() {
+  # Returns 0 if the Gemini desktop app is currently running (store is locked).
+  if [[ "$(uname)" == "Darwin" ]]; then
+    pgrep -xq Gemini 2>/dev/null
+  else
+    pgrep -f "google-gemini" >/dev/null 2>&1
+  fi
+}
+
+write_token_file() {
+  # Gemini desktop has no "env" block, so the token is read by unpy-core from
+  # the standard config file (~/.config/unpy-mcp/token, mode 0600) instead.
+  # Write gate lives in the same config file (allow_write = true) — that
+  # applies to ALL clients since unpy-core reads env first.
+  "$PYTHON3" - "$TOKEN" "$SPACE_ID" "$ALLOW_WRITE" <<'PYEOF'
+import os, sys
+from pathlib import Path
+
+token, space, allow = sys.argv[1], sys.argv[2], sys.argv[3]
+cfg_dir = Path(os.environ.get("NOTION_CONFIG_DIR", "~/.config/unpy-mcp")).expanduser()
+cfg_dir.mkdir(parents=True, exist_ok=True)
+token_file = cfg_dir / "token"
+if token:
+    token_file.write_text(token + "\n")
+    os.chmod(token_file, 0o600)
+    print(f"CREATED {token_file}")
+else:
+    print(f"SKIP {token_file}")
+if space or allow == "1":
+    config_file = cfg_dir / "config.toml"
+    lines = []
+    if space:
+        escaped = space.replace("\\", "\\\\").replace('"', '\\"')
+        lines.append(f'space_id = "{escaped}"')
+    if allow == "1":
+        lines.append("allow_write = true")
+    config_file.write_text("\n".join(lines) + "\n")
+    os.chmod(config_file, 0o600)
+    print(f"UPDATED {config_file}")
+PYEOF
+}
+
 install_into() {
   local client="$1" scope="$2"
   local spec path scope_used
   spec="$(client_paths "$client" "$scope")"
   path="${spec%%|*}"; scope_used="${spec##*|}"
 
-  backup_file "$path"
+  if [[ "$client" == "gemini" ]]; then
+    if [[ "$(uname)" != "Darwin" ]]; then
+      echo "  [SKIP]    gemini — desktop app config lives on macOS only"
+      return
+    fi
+    if check_gemini_running; then
+      die "Gemini app is running — quit it first (menu bar → Quit Gemini), then re-run the installer."
+    fi
+    local store="$HOME/Library/Application Support/com.google.GeminiMacOS/Data/custom-local-mcp-servers.store"
+    if [[ ! -f "$store" ]]; then
+      say "Gemini app data not found — open Gemini once (⌘, → Connected apps), quit it, then re-run."
+      open -a Gemini 2>/dev/null || true
+      return
+    fi
+    backup_file "$store"
+    local status
+    status="$(merge_gemini_desktop "$store")"
+    echo "  [$status] gemini → $store"
+    if [[ "$status" == ERROR* ]]; then
+      die "Writing the Gemini app store failed. Restore the backup:  mv '$store'.bak-* '$store'"
+    fi
+    write_token_file
+    echo "    (Gemini has no env block — token is read from ~/.config/unpy-mcp/token instead)"
+    return
+  fi
 
-  local status
+  backup_file "$path"
   case "$client" in
-    codex)    status="$(merge_toml_client "$path")" ;;
-    opencode) status="$(merge_opencode_client "$path")" ;;
-    *)        status="$(merge_json_client "$client" "$path")" ;;
+    gemini-cli) status="$(merge_json_client "claude-desktop" "$path")" ;;
+    codex)      status="$(merge_toml_client "$path")" ;;
+    opencode)   status="$(merge_opencode_client "$path")" ;;
+    *)          status="$(merge_json_client "$client" "$path")" ;;
   esac
   # The written config embeds NOTION_TOKEN_V2 — restrict to the current user.
   chmod 600 "$path" 2>/dev/null || true
@@ -626,7 +770,13 @@ echo
 echo "  Config files edited (backups saved as <file>.bak-*):"
 for c in "${CLIENTS[@]}"; do
   spec="$(client_paths "$c" "$(scope_for)")"
-  echo "      ${spec%%|*}"
+  p="${spec%%|*}"
+  if [[ "$c" == "gemini" ]]; then
+    p="$HOME/Library/Application Support/com.google.GeminiMacOS/Data/custom-local-mcp-servers.store"
+    echo "      $p  (+ ~/.config/unpy-mcp/token — tokens live here for Gemini, no env block)"
+  else
+    echo "      $p"
+  fi
 done
 [[ ${#SKILL_CLIENTS[@]:-0} -gt 0 ]] || SKILL_CLIENTS=()
 if [[ ${#SKILL_CLIENTS[@]} -gt 0 ]]; then

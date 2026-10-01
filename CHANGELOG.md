@@ -6,6 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-01
+
+### Added
+- **Gemini desktop app + Gemini CLI support** in the installer (`--client gemini`,
+  `--client gemini-cli`). The Gemini desktop app has no config file — the
+  installer registers `unpy-mcp` directly in the app's Core Data store
+  (`~/Library/Application Support/com.google.GeminiMacOS/Data/
+  custom-local-mcp-servers.store`, macOS; quit Gemini first). Since the store
+  can't hold env vars, Gemini reads the token from
+  `~/.config/unpy-mcp/token` (written by the installer, mode 0600). The Gemini
+  CLI uses the standard `mcpServers` block in `~/.gemini/settings.json`.
+
+### Changed
+- Write gate also accepts `allow_write = true` in
+  `~/.config/unpy-mcp/config.toml` (needed for clients with no env block,
+  like the Gemini desktop app; env var still wins when both are set).
+
 ## [2.0.4] - 2026-09-29
 
 ### Fixed

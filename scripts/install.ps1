@@ -29,7 +29,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$RepoUrl = "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.2#subdirectory=packages/unpy-mcp"
+$RepoUrl = "git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packages/unpy-mcp"
 $ServerArgs = @("--refresh", "--from", $RepoUrl, "unpy-mcp")
 
 function Say($msg)  { Write-Host "==> $msg" -ForegroundColor Cyan }
@@ -72,6 +72,7 @@ $UvxPath = (Ensure-Uvx) -replace '\\"', ''
 # ---------------------------------------------------------------- 2. client selection
 $ClientCatalog = @(
   @{ id = "claude-desktop"; label = "Claude Desktop"; dual = $false },
+  @{ id = "gemini-cli";     label = "Gemini CLI";     dual = $false },
   @{ id = "claude-code";    label = "Claude Code";    dual = $true  },
   @{ id = "cursor";         label = "Cursor";         dual = $true  },
   @{ id = "vscode";         label = "VS Code";        dual = $false },
@@ -93,9 +94,10 @@ function Prompt-Clients {
   Write-Host ""
   Say "Which AI clients should get the Notion MCP server?"
   Write-Host "    1) Claude Desktop      5) Codex CLI"
-  Write-Host "    2) Claude Code         6) opencode"
-  Write-Host "    3) Cursor              7) Windsurf"
-  Write-Host "    4) VS Code             a) all of them"
+  Write-Host "    2) Gemini CLI          6) opencode"
+  Write-Host "    3) Claude Code         7) Windsurf"
+  Write-Host "    4) Cursor              a) all of them"
+  Write-Host "    8) VS Code"
   $picks = Read-Host "    Enter numbers separated by space (e.g. 1 3 4)"
   if (-not $picks) { $picks = "a" }
   $script:Clients = @()
@@ -105,13 +107,14 @@ function Prompt-Clients {
     foreach ($p in ($picks -split '\s+') | Where-Object { $_ }) {
       switch ($p) {
         "1" { $script:Clients += "claude-desktop" }
-        "2" { $script:Clients += "claude-code" }
-        "3" { $script:Clients += "cursor" }
-        "4" { $script:Clients += "vscode" }
+        "2" { $script:Clients += "gemini-cli" }
+        "3" { $script:Clients += "claude-code" }
+        "4" { $script:Clients += "cursor" }
         "5" { $script:Clients += "codex" }
         "6" { $script:Clients += "opencode" }
         "7" { $script:Clients += "windsurf" }
-        default { Warn "Ignoring '$p' (1-7 or a)" }
+        "8" { $script:Clients += "vscode" }
+        default { Warn "Ignoring '$p' (1-8 or a)" }
       }
     }
     if ($script:Clients.Count -eq 0) { Die "No client selected." }
@@ -161,6 +164,7 @@ function Get-ClientPath($clientId, $scope) {
   $localAppData = $env:LOCALAPPDATA
   switch ($clientId) {
     "claude-desktop" { return "$appData\Claude\claude_desktop_config.json|global" }
+    "gemini-cli"     { return "$env:USERPROFILE\.gemini\settings.json|global" }
     "claude-code" {
       if ($scope -eq "project" -and (Test-Path .git)) { return ".mcp.json|project" }
       return "$env:USERPROFILE\.claude.json|global"
@@ -317,6 +321,7 @@ function Install-Into($client, $scope) {
   $status = switch ($client) {
     "codex"    { Merge-TomlClient $path }
     "opencode" { Merge-OpenCodeClient $path }
+    "gemini-cli" { Merge-JsonClient "claude-desktop" $path }
     default    { Merge-JsonClient $client $path }
   }
   Write-Host "  [$status] $client -> $path (scope: $scopeUsed)"

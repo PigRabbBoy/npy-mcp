@@ -31,6 +31,8 @@ done
 
 CLIENT_CATALOG=(
   "claude-desktop|Claude Desktop"
+  "gemini|Gemini (desktop app)"
+  "gemini-cli|Gemini CLI"
   "claude-code|Claude Code"
   "cursor|Cursor"
   "vscode|VS Code"
@@ -99,12 +101,13 @@ if [[ ${#CLIENTS[@]} -eq 0 ]]; then
     else
       checked=()
       for ((i = 0; i < n; i++)); do checked+=(0); done
-      for p in $picks; do
-        case "$p" in
-          1) checked[0]=1 ;; 2) checked[1]=1 ;; 3) checked[2]=1 ;; 4) checked[3]=1 ;;
-          5) checked[4]=1 ;; 6) checked[5]=1 ;; 7) checked[6]=1 ;;
-        esac
-      done
+  for p in $picks; do
+    case "$p" in
+      1) checked[0]=1 ;; 2) checked[1]=1 ;; 3) checked[2]=1 ;; 4) checked[3]=1 ;;
+      5) checked[4]=1 ;; 6) checked[5]=1 ;; 7) checked[6]=1 ;; 8) checked[7]=1 ;;
+      9) checked[8]=1 ;;
+    esac
+  done
     fi
   fi
 
@@ -129,6 +132,9 @@ client_paths() {
       else
         echo "$CONFIG_HOME/Claude/claude_desktop_config.json"
       fi ;;
+    gemini)
+      echo "$HOME/Library/Application Support/com.google.GeminiMacOS/Data/custom-local-mcp-servers.store" ;;
+    gemini-cli)  echo "$HOME/.gemini/settings.json" ;;
     claude-code) echo "$HOME/.claude.json|.mcp.json" ;;
     cursor)      echo "$HOME/.cursor/mcp.json|.cursor/mcp.json" ;;
     vscode)      echo "$CONFIG_HOME/Code/User/mcp.json|.vscode/mcp.json" ;;
@@ -187,6 +193,26 @@ print("REMOVED")
 PYEOF
 }
 
+remove_gemini_desktop() {
+  # Delete the unpy-mcp row from the Gemini desktop app's Core Data store.
+  # The app must be quit first (the store is locked while it runs).
+  "$PYTHON3" - "$1" <<'PYEOF'
+import os, sqlite3, sys
+
+path = sys.argv[1]
+if not os.path.exists(path):
+    print("SKIP"); sys.exit(0)
+conn = sqlite3.connect(path)
+row = conn.execute("SELECT Z_PK FROM ZPERSISTENTCUSTOMLOCALMCPSERVER WHERE ZID='unpy-mcp'").fetchone()
+if not row:
+    print("ABSENT"); sys.exit(0)
+conn.execute("DELETE FROM ZPERSISTENTCUSTOMLOCALMCPSERVER WHERE ZID='unpy-mcp'")
+conn.commit()
+conn.close()
+print("REMOVED")
+PYEOF
+}
+
 say "Removing unpy-mcp from configs…"
 for c in "${CLIENTS[@]}"; do
   spec="$(client_paths "$c")"
@@ -195,6 +221,14 @@ for c in "${CLIENTS[@]}"; do
   # try every candidate path (global + project scopes)
   for path in "$primary" $fallback; do
     [[ -n "$path" && -f "$path" ]] || continue
+    case "$c" in
+      gemini)
+        pgrep -xq Gemini 2>/dev/null && { echo "  [SKIPPED] gemini — quit the Gemini app first, then re-run"; continue; }
+        backup_file "$path"
+        status="$(remove_gemini_desktop "$path")"
+        [[ "$status" == "REMOVED" ]] && { echo "  [REMOVED] $path"; removed=1; }
+        continue ;;
+    esac
     backup_file "$path"
     case "$c" in
       codex)    status="$("$PYTHON3" - "$path" <<'PYEOF'

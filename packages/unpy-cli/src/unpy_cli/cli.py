@@ -70,10 +70,25 @@ app.add_typer(auth_app, name="auth")
 # ---------------------------------------------------------------------------
 
 def _check_write_enabled() -> None:
-    """Gate write commands behind NOTION_ALLOW_WRITE=1 env var."""
+    """Gate write commands behind NOTION_ALLOW_WRITE=1 env var (or
+    allow_write = true in the unpy config file)."""
     if os.environ.get("NOTION_ALLOW_WRITE") != "1":
+        config_file = os.path.join(
+            os.environ.get("NOTION_CONFIG_DIR", os.path.expanduser("~/.config/unpy-mcp")),
+            "config.toml",
+        )
+        if os.path.exists(config_file):
+            try:
+                import tomllib
+
+                with open(config_file, "rb") as f:
+                    if tomllib.load(f).get("allow_write"):
+                        return
+            except Exception:
+                pass
         typer.echo(
-            "Write commands require NOTION_ALLOW_WRITE=1 env var.\n"
+            "Write commands require NOTION_ALLOW_WRITE=1 env var "
+            "(or allow_write = true in ~/.config/unpy-mcp/config.toml).\n"
             "Example: NOTION_ALLOW_WRITE=1 notion create-page ...",
             err=True,
         )

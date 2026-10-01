@@ -15,8 +15,9 @@ $ErrorActionPreference = "Stop"
 function Say($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 
 $ClientCatalog = @(
-  @{ id = "claude-desktop" }, @{ id = "claude-code" }, @{ id = "cursor" },
-  @{ id = "vscode" }, @{ id = "codex" }, @{ id = "opencode" }, @{ id = "windsurf" }
+  @{ id = "claude-desktop" }, @{ id = "gemini-cli" }, @{ id = "claude-code" },
+  @{ id = "cursor" }, @{ id = "vscode" }, @{ id = "codex" },
+  @{ id = "opencode" }, @{ id = "windsurf" }
 )
 $AllIds = $ClientCatalog | ForEach-Object { $_.id }
 
@@ -24,9 +25,10 @@ if ($Clients.Count -eq 0) {
   Write-Host ""
   Say "Remove the Notion MCP server from which clients?"
   Write-Host "    1) Claude Desktop      5) Codex CLI"
-  Write-Host "    2) Claude Code         6) opencode"
-  Write-Host "    3) Cursor              7) Windsurf"
-  Write-Host "    4) VS Code             a) all"
+  Write-Host "    2) Gemini CLI          6) opencode"
+  Write-Host "    3) Claude Code         7) Windsurf"
+  Write-Host "    4) Cursor              a) all"
+  Write-Host "    8) VS Code"
   $picks = Read-Host "    Numbers (Enter = all)"
   if (-not $picks -or $picks -match '^[Aa]$') {
     $script:Clients = $AllIds
@@ -34,12 +36,13 @@ if ($Clients.Count -eq 0) {
     foreach ($p in ($picks -split '\s+') | Where-Object { $_ }) {
       switch ($p) {
         "1" { $script:Clients += "claude-desktop" }
-        "2" { $script:Clients += "claude-code" }
-        "3" { $script:Clients += "cursor" }
-        "4" { $script:Clients += "vscode" }
+        "2" { $script:Clients += "gemini-cli" }
+        "3" { $script:Clients += "claude-code" }
+        "4" { $script:Clients += "cursor" }
         "5" { $script:Clients += "codex" }
         "6" { $script:Clients += "opencode" }
         "7" { $script:Clients += "windsurf" }
+        "8" { $script:Clients += "vscode" }
       }
     }
   }
@@ -49,6 +52,7 @@ function Get-ClientPaths($clientId) {
   # returns all candidate paths (global + project)
   switch ($clientId) {
     "claude-desktop" { return @("$env:APPDATA\Claude\claude_desktop_config.json") }
+    "gemini-cli"     { return @("$env:USERPROFILE\.gemini\settings.json") }
     "claude-code"    { return @("$env:USERPROFILE\.claude.json", ".mcp.json") }
     "cursor"         { return @("$env:USERPROFILE\.cursor\mcp.json", ".cursor\mcp.json") }
     "vscode"         { return @("$env:APPDATA\Code\User\mcp.json", ".vscode\mcp.json") }

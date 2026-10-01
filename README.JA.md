@@ -54,8 +54,8 @@ irm https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/install.
 ```
 
 インストーラーの質問：
-1. **どの AI クライアントに？** — 複数選択可：Claude Desktop、Claude Code、Cursor、
-   VS Code、Codex、opencode、Windsurf
+1. **どの AI クライアントに？** — 複数選択可：Claude Desktop、Gemini（デスクトップ
+   アプリ）、Gemini CLI、Claude Code、Cursor、VS Code、Codex、opencode、Windsurf
 2. **`NOTION_TOKEN_V2`** — 画面上で手順を案内（DevTools → Application →
    Cookies → `token_v2`）
 3. **`NOTION_SPACE_ID`** — 任意。複数ワークスペースがある場合の探し方を案内
@@ -88,7 +88,7 @@ curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/u
   "mcpServers": {
     "unpy-mcp": {
       "command": "uvx",
-      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.2#subdirectory=packages/unpy-mcp", "unpy-mcp"],
+      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packages/unpy-mcp", "unpy-mcp"],
       "env": {
         "NOTION_TOKEN_V2": "v03%3AeyJ..."
       }
@@ -104,7 +104,7 @@ curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/u
     "unpy-mcp": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.2#subdirectory=packages/unpy-mcp", "unpy-mcp"],
+      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packages/unpy-mcp", "unpy-mcp"],
       "env": { "NOTION_TOKEN_V2": "v03%3AeyJ..." }
     }
   }
@@ -115,9 +115,30 @@ curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/u
 ```toml
 [mcp_servers.unpy-mcp]
 command = "uvx"
-args = ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.2#subdirectory=packages/unpy-mcp", "unpy-mcp"]
+args = ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packages/unpy-mcp", "unpy-mcp"]
 env = { NOTION_TOKEN_V2 = "v03%3AeyJ..." }
 ```
+
+**Gemini デスクトップアプリ**（macOS）— 設定ファイルを持たないため、
+インストーラーが Gemini アプリ自体のデータストアに直接登録します。
+**先に Gemini を終了しておく**必要があります（メニューバー → Gemini を終了）。
+トークンは `~/.config/unpy-mcp/token` から読まれます（インストーラーが書き込み。
+ストアは env 変数を持てないため）。書き込み有効化は
+`~/.config/unpy-mcp/config.toml` に `allow_write = true`。
+
+**Gemini CLI**（`~/.gemini/settings.json`）— 標準の `mcpServers` ブロック：
+```json
+{
+  "mcpServers": {
+    "unpy-mcp": {
+      "command": "uvx",
+      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packages/unpy-mcp", "unpy-mcp"],
+      "env": { "NOTION_TOKEN_V2": "v03%3AeyJ..." }
+    }
+  }
+}
+```
+CLI 内で `/mcp list` で確認できます。
 
 **Docker**（Python/uv 不要）— 上記と同じ設定でコマンドを docker にするだけ：
 ```json
@@ -134,7 +155,7 @@ env = { NOTION_TOKEN_V2 = "v03%3AeyJ..." }
 
 **pip install**（Python 開発者向け）：
 ```bash
-pip install "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.2#subdirectory=packages/unpy-mcp"
+pip install "git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packages/unpy-mcp"
 ```
 設定には `"command": "python"`、`"args": ["-m", "unpy_mcp"]` を使用してください。
 </details>
@@ -152,6 +173,10 @@ pip install "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.2#subdirectory=packa
   "NOTION_ALLOW_WRITE": "1"
 }
 ```
+
+**Gemini デスクトップアプリ**（env ブロックのないクライアント全般）：トークンと
+書き込みフラグは設定ファイル側に置きます — `~/.config/unpy-mcp/token`
+（0600）と `~/.config/unpy-mcp/config.toml` の `allow_write = true`。
 
 意図的な設計です：明示的にオプトインしない限り、AI がワークスペースを
 編集できません。[ADR-0005](docs/adr/0005-read-write-scope-gated.md) を参照。

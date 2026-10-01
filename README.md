@@ -53,8 +53,8 @@ irm https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/install.
 ```
 
 The installer asks:
-1. **Which AI clients?** — multiselect: Claude Desktop, Claude Code, Cursor,
-   VS Code, Codex, opencode, Windsurf
+1. **Which AI clients?** — multiselect: Claude Desktop, Gemini (desktop app),
+   Gemini CLI, Claude Code, Cursor, VS Code, Codex, opencode, Windsurf
 2. **`NOTION_TOKEN_V2`** — with on-screen instructions (DevTools →
    Application → Cookies → `token_v2`)
 3. **`NOTION_SPACE_ID`** — optional; shown how to find it if you're in
@@ -92,7 +92,7 @@ curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/u
   "mcpServers": {
     "unpy-mcp": {
       "command": "uvx",
-      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.2#subdirectory=packages/unpy-mcp", "unpy-mcp"],
+      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packages/unpy-mcp", "unpy-mcp"],
       "env": {
         "NOTION_TOKEN_V2": "v03%3AeyJ..."
       }
@@ -108,7 +108,7 @@ curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/u
     "unpy-mcp": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.2#subdirectory=packages/unpy-mcp", "unpy-mcp"],
+      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packages/unpy-mcp", "unpy-mcp"],
       "env": { "NOTION_TOKEN_V2": "v03%3AeyJ..." }
     }
   }
@@ -119,9 +119,30 @@ curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/u
 ```toml
 [mcp_servers.unpy-mcp]
 command = "uvx"
-args = ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.2#subdirectory=packages/unpy-mcp", "unpy-mcp"]
+args = ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packages/unpy-mcp", "unpy-mcp"]
 env = { NOTION_TOKEN_V2 = "v03%3AeyJ..." }
 ```
+
+**Gemini desktop app** (macOS) — has no config file. The installer registers the
+server directly in Gemini's own data store — just **quit Gemini first**
+(menu bar → Quit Gemini). The token is read from `~/.config/unpy-mcp/token`
+(the installer writes it; no env block needed since the store can't hold env
+vars). To enable writes for Gemini: `allow_write = true` in
+`~/.config/unpy-mcp/config.toml`.
+
+**Gemini CLI** (`~/.gemini/settings.json`) — standard `mcpServers` block:
+```json
+{
+  "mcpServers": {
+    "unpy-mcp": {
+      "command": "uvx",
+      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packages/unpy-mcp", "unpy-mcp"],
+      "env": { "NOTION_TOKEN_V2": "v03%3AeyJ..." }
+    }
+  }
+}
+```
+Verify inside the CLI with `/mcp list`.
 
 **Docker** (no Python/uv needed) — same configs as above but with docker as the command:
 ```json
@@ -138,7 +159,7 @@ env = { NOTION_TOKEN_V2 = "v03%3AeyJ..." }
 
 **pip install** (Python developers):
 ```bash
-pip install "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.2#subdirectory=packages/unpy-mcp"
+pip install "git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packages/unpy-mcp"
 ```
 Then use `"command": "python"`, `"args": ["-m", "unpy_mcp"]` in the config.
 </details>
@@ -156,6 +177,11 @@ or just re-run the installer:
   "NOTION_ALLOW_WRITE": "1"
 }
 ```
+
+**Gemini desktop app** (and any other client without an env block): the token
+and write flag live in the config files instead —
+`~/.config/unpy-mcp/token` (0600) and `allow_write = true` in
+`~/.config/unpy-mcp/config.toml`.
 
 This is deliberate: it stops an AI from editing your workspace unless you
 explicitly opt in. See [ADR-0005](docs/adr/0005-read-write-scope-gated.md).

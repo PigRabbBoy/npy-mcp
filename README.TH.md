@@ -54,8 +54,9 @@ irm https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/install.
 ```
 
 ตัวติดตั้งจะถาม:
-1. **จะลงให้ AI client ตัวไหน?** — เลือกได้หลายตัว: Claude Desktop, Claude Code,
-   Cursor, VS Code, Codex, opencode, Windsurf
+1. **จะลงให้ AI client ตัวไหน?** — เลือกได้หลายตัว: Claude Desktop,
+   Gemini (desktop app), Gemini CLI, Claude Code, Cursor, VS Code, Codex,
+   opencode, Windsurf
 2. **`NOTION_TOKEN_V2`** — มีวิธีทำบนหน้าจอบอก (DevTools → Application →
    Cookies → `token_v2`)
 3. **`NOTION_SPACE_ID`** — ไม่บังคับ; บอกวิธีหาถ้าคุณอยู่หลาย workspace
@@ -88,7 +89,7 @@ curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/u
   "mcpServers": {
     "unpy-mcp": {
       "command": "uvx",
-      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.2#subdirectory=packages/unpy-mcp", "unpy-mcp"],
+      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packages/unpy-mcp", "unpy-mcp"],
       "env": {
         "NOTION_TOKEN_V2": "v03%3AeyJ..."
       }
@@ -104,7 +105,7 @@ curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/u
     "unpy-mcp": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.2#subdirectory=packages/unpy-mcp", "unpy-mcp"],
+      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packages/unpy-mcp", "unpy-mcp"],
       "env": { "NOTION_TOKEN_V2": "v03%3AeyJ..." }
     }
   }
@@ -115,9 +116,29 @@ curl -fsSL https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/u
 ```toml
 [mcp_servers.unpy-mcp]
 command = "uvx"
-args = ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.2#subdirectory=packages/unpy-mcp", "unpy-mcp"]
+args = ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packages/unpy-mcp", "unpy-mcp"]
 env = { NOTION_TOKEN_V2 = "v03%3AeyJ..." }
 ```
+
+**Gemini desktop app** (macOS) — ไม่มีไฟล์ config ตัวติดตั้งจะลงทะเบียน server
+ลงตรงใน data store ของแอป Gemini เอง — แค่ **ปิดแอป Gemini ก่อน**
+(เมนูบาร์ → Quit Gemini) token จะถูกอ่านจาก `~/.config/unpy-mcp/token`
+(ตัวติดตั้งเขียนให้; store ใส่ env vars ไม่ได้) เปิด write ด้วย
+`allow_write = true` ใน `~/.config/unpy-mcp/config.toml`
+
+**Gemini CLI** (`~/.gemini/settings.json`) — ใช้ block `mcpServers` ปกติ:
+```json
+{
+  "mcpServers": {
+    "unpy-mcp": {
+      "command": "uvx",
+      "args": ["--refresh", "--from", "git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packages/unpy-mcp", "unpy-mcp"],
+      "env": { "NOTION_TOKEN_V2": "v03%3AeyJ..." }
+    }
+  }
+}
+```
+ตรวจสอบใน CLI ด้วย `/mcp list`
 
 **Docker** (ไม่ต้องมี Python/uv) — config เดิมแต่เปลี่ยน command เป็น docker:
 ```json
@@ -134,7 +155,7 @@ env = { NOTION_TOKEN_V2 = "v03%3AeyJ..." }
 
 **pip install** (สำหรับคนเขียน Python):
 ```bash
-pip install "git+https://github.com/PigRabbBoy/npy-mcp@v1.0.2#subdirectory=packages/unpy-mcp"
+pip install "git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packages/unpy-mcp"
 ```
 แล้วใช้ `"command": "python"`, `"args": ["-m", "unpy_mcp"]` ใน config
 </details>
@@ -152,6 +173,10 @@ write ไหม ถ้าอยากเปลี่ยนทีหลัง ใ
   "NOTION_ALLOW_WRITE": "1"
 }
 ```
+
+**Gemini desktop app** (และ client อื่นที่ไม่มี env block): token กับธง write
+จะอยู่ในไฟล์ config แทน — `~/.config/unpy-mcp/token` (โหมด 0600) และ
+`allow_write = true` ใน `~/.config/unpy-mcp/config.toml`
 
 ออกแบบไว้แบบนี้ตั้งใจ: ป้องกันไม่ให้ AI แก้ workspace ของคุณ เว้นแต่คุณ
 เปิดเองชัดเจน ดู [ADR-0005](docs/adr/0005-read-write-scope-gated.md)

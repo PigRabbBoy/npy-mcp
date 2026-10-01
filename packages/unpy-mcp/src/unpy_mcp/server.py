@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import sys
+import tomllib
 from pathlib import Path
 from typing import Annotated
 
@@ -1626,10 +1627,29 @@ def export(
 
 
 # ---------------------------------------------------------------------------
-# Write tools (gated by NOTION_ALLOW_WRITE=1)
+# Write tools (gated by NOTION_ALLOW_WRITE=1, or allow_write = true in the
+# unpy config file — the config fallback exists because clients without an
+# env block, like the Gemini desktop app, cannot pass env vars)
 # ---------------------------------------------------------------------------
 
-_WRITE_ENABLED = os.environ.get("NOTION_ALLOW_WRITE") == "1"
+
+def _resolve_write_enabled() -> bool:
+    """Write gate: env var wins, then the config file's allow_write."""
+    if os.environ.get("NOTION_ALLOW_WRITE"):
+        return os.environ["NOTION_ALLOW_WRITE"] == "1"
+    config_file = Path(
+        os.environ.get("NOTION_CONFIG_DIR", "~/.config/unpy-mcp")
+    ).expanduser() / "config.toml"
+    if config_file.exists():
+        try:
+            with open(config_file, "rb") as f:
+                return bool(tomllib.load(f).get("allow_write"))
+        except Exception:
+            return False
+    return False
+
+
+_WRITE_ENABLED = _resolve_write_enabled()
 
 
 def _validate_block_specs(block_specs, type_map: dict) -> list[str]:
