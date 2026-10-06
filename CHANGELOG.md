@@ -6,6 +6,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-10-06
+
+### Fixed
+- **`create-view --sort` shorthand** (issue #40): the documented shorthand
+  (`--sort "Name,-Due"`) failed with `sort is not valid JSON` because
+  `build_view_payload` eagerly JSON-parsed string sorts before
+  `translate_sort` (which already handles both JSON and shorthand) ever saw
+  them. String sorts are now passed straight through; invalid sort property
+  names still raise before any write.
+- **`list-templates` / `create-template` readback** (issue #41): template
+  blocks are not in the collection's `content`, so a fresh client (every CLI
+  call, MCP server) had none cached and `list_templates` returned `[]` while
+  `create-template` duplicated templates on re-run. Both `find_template_by_name`
+  and `list_templates` now load the `template_pages` blocks into the record
+  store (one `syncRecordValues` round-trip) before reading; `create-template`
+  is idempotent by title across processes again.
+
+### Tests
+- 8 new tests (TestIssue40SortShorthand, TestIssue41TemplateStoreLoad incl.
+  cross-process idempotency); suite 358 passing.
+
 ## [2.2.0] - 2026-10-06
 
 ### Added

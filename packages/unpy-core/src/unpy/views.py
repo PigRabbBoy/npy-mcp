@@ -496,11 +496,7 @@ def build_view_payload(
         if f:
             query2["filter"] = f
     if sort_spec not in (None, "", []):
-        try:
-            parsed = sort_spec if isinstance(sort_spec, list) else json_loads(sort_spec)
-        except Exception as exc:
-            raise ValueError(f"sort is not valid JSON: {exc}") from exc
-        s = translate_sort(parsed, raw_schema, name_to_pid)
+        s = translate_sort(sort_spec, raw_schema, name_to_pid)
         if s:
             query2["sort"] = s
 

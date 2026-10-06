@@ -21,7 +21,9 @@ def find_template_by_name(collection, title: str):
     want = (title or "").strip().lower()
     if not want:
         return None
-    store = collection._client._store._values.get("block", {})
+    client = collection._client
+    _load_template_blocks(client, collection.get("template_pages") or [])
+    store = client._store._values.get("block", {})
     for tid in collection.get("template_pages") or []:
         data = store.get(tid) or {}
         if data.get("alive") is False or not data.get("is_template"):
@@ -38,6 +40,18 @@ def find_template_by_name(collection, title: str):
 
             return CollectionRowBlock(collection._client, tid)
     return None
+
+
+def _load_template_blocks(client, template_ids) -> None:
+    """Fetch the template blocks into the record store before readback.
+
+    Template pages are NOT in the collection's content, so a fresh client
+    (every CLI invocation) has none cached — without this load every
+    lookup/skim sees missing records and silently skips them (issue #41).
+    """
+    ids = [tid for tid in template_ids if tid]
+    if ids:
+        client.refresh_records(block=ids)
 
 
 def _resolve_prop_by_name(raw_schema: dict, name: str):
@@ -274,6 +288,7 @@ def list_templates(collection, client) -> list[dict]:
             return schema[pid].get("name", pid)
         return pid
 
+    _load_template_blocks(client, collection.get("template_pages") or [])
     store = client._store._values.get("block", {})
     # the collection-level default (also read per-view keys)
     default_id = (((collection.get("format") or {}).get("collection_default_template")) or {}).get("template_page_id")

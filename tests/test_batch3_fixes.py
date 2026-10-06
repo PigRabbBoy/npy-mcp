@@ -36,6 +36,7 @@ class FakeStore:
 class FakeClient:
     def __init__(self, space_id="sp1", user_id="u1"):
         self._store = FakeStore()
+        self._monitor = None
         self.current_space = type("S", (), {"id": space_id})()
         self.current_user = type("U", (), {"id": user_id})()
         self.submitted = []
@@ -48,6 +49,24 @@ class FakeClient:
 
     def get_block(self, _id):
         return self._store_block_index.get(_id) if hasattr(self, "_store_block_index") else None
+
+    def refresh_records(self, **kwargs):
+        pass
+
+    def as_atomic_transaction(self):
+        import contextlib
+
+        return contextlib.nullcontext()
+
+    def create_record(self, table, parent, **kw):
+        import uuid
+
+        rid = str(uuid.uuid4())
+        self._store._values.setdefault(table, {})[rid] = {
+            "id": rid, "alive": True, **kw,
+            "parent_id": parent.id, "parent_table": "collection",
+        }
+        return rid
 
     def get_record_data(self, table, _id, **kw):
         return self._store._values.get(table, {}).get(_id)
@@ -751,3 +770,211 @@ class TestIssue38Templates:
         assert validate_block_specs_specs([{"type": "todo", "text": "x", "checked": False}]) == []
         errs = validate_block_specs_specs([{"type": "todo", "text": "x", "checked": "yes"}])
         assert errs and "'checked' must be a boolean" in errs[0]
+
+
+# ---- issue #40: sort shorthand dropped before translate_sort ----------------
+
+
+class TestIssue40SortShorthand:
+    """String shorthand must reach translate_sort (which parses it), not die
+    in build_view_payload's eager json.loads."""
+
+    def _collection(self):
+        client = FakeClient()
+        coll = _make_collection(client, {
+            "title": {"name": "Name", "type": "title"},
+            "dd33": {"name": "Due", "type": "date"},
+        })
+        return coll, client
+
+    def test_shorthand_string_accepted(self):
+        from unpy.views import build_view_payload
+
+        coll, client = self._collection()
+        payload = build_view_payload(client, coll, "table", "V",
+                                     sort_spec="Name,-Due")
+        assert payload["query2"]["sort"] == [
+            {"property": "title", "direction": "ascending"},
+            {"property": "dd33", "direction": "descending"},
+        ]
+
+    def test_single_name_shorthand(self):
+        from unpy.views import build_view_payload
+
+        coll, client = self._collection()
+        payload = build_view_payload(client, coll, "table", "V", sort_spec="Due")
+        assert payload["query2"]["sort"] == [
+            {"property": "dd33", "direction": "ascending"}]
+
+    def test_json_list_still_works(self):
+        from unpy.views import build_view_payload
+
+        coll, client = self._collection()
+        payload = build_view_payload(
+            client, coll, "table", "V",
+            sort_spec='[{"property":"Due","direction":"descending"}]',
+        )
+        assert payload["query2"]["sort"] == [
+            {"property": "dd33", "direction": "descending"}]
+
+    def test_invalid_property_still_raises_before_write(self):
+        from unpy.views import build_view_payload
+
+        coll, client = self._collection()
+        with pytest.raises(ValueError, match="sort property"):
+            build_view_payload(client, coll, "table", "V", sort_spec="Nope")
+
+
+# ---- issue #41: template blocks never loaded into a fresh store --------------
+
+
+class TestIssue41TemplateStoreLoad:
+    """find_template_by_name / list_templates read the store directly; a
+    fresh client (every CLI call) must fetch the template_pages blocks
+    first or every template is silently skipped."""
+
+    def _collection_with_template(self, client, tid="85c493ca-748d-4f32-9513-75060d1f375a", title="Clause"):
+        from unpy.collection import Collection
+
+        coll = Collection.__new__(Collection)
+        object.__setattr__(coll, "_client", client)
+        object.__setattr__(coll, "_id", "col1")
+        object.__setattr__(coll, "_table", "collection")
+        object.__setattr__(coll, "_callbacks", [])
+        client._store._values["collection"]["col1"] = {
+            "id": "col1", "schema": TEMPLATE_SCHEMA, "name": "T DB",
+            "alive": True, "template_pages": [tid],
+        }
+        return coll
+
+    def _register_fresh_block(self, client, tid, title):
+        """Simulate what syncRecordValues would return — the fake client
+        stores it directly when 'refreshed'."""
+        TID = "85c493ca-748d-4f32-9513-75060d1f375a"
+        assert tid == TID
+        data = {
+            "id": TID, "type": "page", "is_template": True, "alive": True,
+            "parent_id": "col1", "parent_table": "collection",
+            "properties": {"title": [[title]]},
+            "content": [],
+        }
+
+        def refresh_records(**kw):
+            for b in kw.get("block", []):
+                client._store._values["block"][b] = dict(data)
+
+        client.refresh_records = refresh_records
+        return data
+
+    def test_find_template_by_name_fresh_client(self):
+        from unpy.templates import find_template_by_name
+
+        client = FakeClient()
+        coll = self._collection_with_template(client)
+        tid = "85c493ca-748d-4f32-9513-75060d1f375a"
+        # nothing in store yet — the bug reported the block as missing
+        data = self._register_fresh_block(client, tid, "Clause")
+        assert not client._store._values["block"]
+        found = find_template_by_name(coll, "Clause")
+        assert found is not None
+        assert found.id == tid
+        loaded = client._store._values["block"][tid]
+        assert loaded["is_template"] is True and loaded == data
+
+    def test_find_template_by_name_no_match_after_load(self):
+        from unpy.templates import find_template_by_name
+
+        client = FakeClient()
+        coll = self._collection_with_template(client)
+        self._register_fresh_block(
+            client, "85c493ca-748d-4f32-9513-75060d1f375a", "Clause")
+        assert find_template_by_name(coll, "Other") in (None,)
+
+    def test_list_templates_fresh_client(self):
+        from unpy.templates import list_templates
+
+        client = FakeClient()
+        coll = self._collection_with_template(client)
+        self._register_fresh_block(client, "85c493ca-748d-4f32-9513-75060d1f375a", "Clause")
+        out = list_templates(coll, client)
+        assert len(out) == 1
+        assert out[0]["id"] == "85c493ca-748d-4f32-9513-75060d1f375a"
+        assert out[0]["title"] == "Clause"
+
+    def test_list_templates_empty_pages_no_request(self):
+        from unpy.templates import list_templates
+
+        client = FakeClient()
+        coll = self._collection_with_template(client, tid="85c493ca-748d-4f32-9513-75060d1f375a", title="x")
+        client._store._values["collection"]["col1"]["template_pages"] = []
+        called = []
+        client.refresh_records = lambda **kw: called.append(kw)
+        assert list_templates(coll, client) == []
+        assert called == []  # no ids → no syncRecordValues round-trip
+
+    def test_create_template_idempotent_across_processes(self):
+        # simulate a second process: store empty, refresh loads the block
+        from unittest.mock import patch
+
+        import uuid
+
+        from unpy.templates import create_template
+
+        client = FakeClient()
+
+        def make_record(table, parent, **kw):
+            rid = str(uuid.uuid4())
+            client._store._values["block"][rid] = {
+                "id": rid, "type": "page", "alive": True,
+                "parent_id": "col1", "parent_table": "table",
+                "properties": {}, "content": [],
+            }
+            return rid
+
+        client.create_record = make_record
+        coll = self._collection_with_template(client)
+
+        # first run: nothing loaded → find fails → row created; register
+        # the created row as a template so a second lookup finds it
+        created = []
+
+        def submit_transaction(ops):
+            ops = ops if isinstance(ops, list) else [ops]
+            client.submitted.extend(ops)
+            for op in ops:
+                if not isinstance(op, dict):
+                    continue
+                if (op.get("path") == ["template_pages"]
+                        and op.get("command") == "listAfter"):
+                    new_id = op["args"]["id"]
+                    created.append(new_id)
+                    client._store._values["block"][new_id] = {
+                        "id": new_id, "type": "page",
+                        "is_template": True, "alive": True,
+                        "parent_id": "col1", "parent_table": "collection",
+                        "properties": {"title": [["Clause"]]},
+                        "content": [],
+                    }
+
+        client.submit_transaction = submit_transaction
+        row, msg = create_template(client, coll, "Clause")
+        assert row.id in created
+        # second "process": pretend store was forgotten, but the template
+        # block is loadable (as syncRecordValues would)
+        client._store._values["block"] = {}
+        tdata = {
+            "id": created[0], "type": "page", "is_template": True,
+            "alive": True, "parent_id": "col1", "parent_table": "collection",
+            "properties": {"title": [["Clause"]]}, "content": [],
+        }
+
+        def refresh_records(**kw):
+            for b in kw.get("block", []):
+                client._store._values["block"][b] = dict(tdata)
+
+        client.refresh_records = refresh_records
+        client._store._values["collection"]["col1"]["template_pages"] = created
+        with patch.object(type(coll), "add_row") as add_row:
+            row2, msg2 = create_template(client, coll, "Clause")
+            add_row.assert_not_called()
+        assert "updated existing" in msg2
