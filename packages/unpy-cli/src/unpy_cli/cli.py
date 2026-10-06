@@ -197,7 +197,15 @@ def query_database(
     if collection is None:
         typer.echo(f"Database not found: {database_id}", err=True)
         raise typer.Exit(1)
-    rows = collection.get_rows()[:limit] if hasattr(collection, "get_rows") else []
+    if limit <= 0:
+        # 0 or negative = fetch every row
+        rows = collection.get_rows(limit=-1)
+        if len(rows) == 100:
+            # Notion's server-side default page size — the query above may
+            # have been capped; re-fetch with an explicit large limit
+            rows = collection.get_rows(limit=1000000)
+    else:
+        rows = collection.get_rows(limit=limit)
     typer.echo(render_rows(rows, format))
 
 

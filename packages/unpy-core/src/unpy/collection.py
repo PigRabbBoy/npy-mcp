@@ -448,7 +448,15 @@ class CollectionQuery(object):
             result = self._client.query_collection(
                 **kwargs
             )
-            self.limit = result.get("total",-1)
+            # The limit:0 reducer response carries no "total" key — fall
+            # back to "sizeHint" like QueryResult does (issue #28),
+            # and clamp to the server's default page size when neither
+            # key is present so the second query can exceed 100 rows.
+            self.limit = result.get("total")
+            if self.limit is None:
+                self.limit = result.get("sizeHint", -1)
+            if not self.limit or self.limit < 0:
+                self.limit = 1000000
 
         kwargs['limit'] = self.limit
 

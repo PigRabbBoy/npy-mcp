@@ -2382,6 +2382,8 @@ if _WRITE_ENABLED:
         page = parent.children.add_new(PageBlock, title=title)
         if icon:
             page.icon = icon
+        count, failures = 0, []
+        specs = None
         if blocks:
             try:
                 specs = json.loads(blocks)
@@ -2392,10 +2394,10 @@ if _WRITE_ENABLED:
         if failures:
             added = (
                 f", added {count} of {_batch_denominator(specs, failures)} block(s)"
-                if blocks
+                if specs is not None
                 else ""
             )
-            msg += f" ({'; '.join(failures)})"
+            msg += f"{added} ({'; '.join(failures)})"
         return msg
 
     @mcp.tool()

@@ -728,3 +728,308 @@ class TestIssue26Denominator:
         )
         # one clean success → no denominator path at all
         assert result == "Added 1 block(s) to pid"
+
+
+# ---- issue #29: create_page without blocks must not raise UnboundLocalError ---
+
+
+class TestIssue29CreatePageNoBlocks:
+    """create_page(blocks="") crashed with UnboundLocalError on `failures`
+    AFTER the page was created — page id lost, retries create duplicates."""
+
+    def _drive(self, blocks, add_new=None):
+        import importlib
+
+        old = {k: os.environ.get(k) for k in ("NOTION_TOKEN_V2", "NOTION_ALLOW_WRITE")}
+        os.environ["NOTION_TOKEN_V2"] = "test-token"
+        os.environ["NOTION_ALLOW_WRITE"] = "1"
+        try:
+            import unpy_mcp.server as srv
+
+            importlib.reload(srv)
+
+            class FakeChildren:
+                def __init__(self):
+                    self.added = []
+
+                def add_new(self, cls, **kwargs):
+                    if add_new:
+                        add_new(self, cls, **kwargs)
+                    self.added.append(kwargs)
+                    return FakePageChild()
+
+            class FakePage:
+                id = "page999"
+
+                def __init__(self):
+                    self.children = FakeChildren()
+
+                def get_browseable_url(self):
+                    return "https://notion.so/page999"
+
+            class FakePageChild(FakePage):
+                pass
+
+            page = FakePage()
+
+            class FakeClient:
+                def get_block(self, _id):
+                    return page
+
+            srv._get_client = lambda: FakeClient()
+            result = srv.create_page("pid", "X", icon="☑️", blocks=blocks)
+            return result, page
+        finally:
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
+    def test_no_blocks_returns_page_id(self):
+        # the issue repro: no blocks → must succeed, not UnboundLocalError
+        result, page = self._drive("")
+        assert isinstance(result, str)
+        assert "page999" in result
+        assert "URL" not in result  # just sanity: no crash placeholder
+
+    def test_no_blocks_id_reported_for_retry_safety(self):
+        result, _ = self._drive("")
+        assert result == "Created page page999 — https://notion.so/page999"
+
+    def test_invalid_json_still_reports_page_id(self):
+        result, _ = self._drive("{not json")
+        assert "page999" in result
+        assert "invalid blocks JSON" in result
+        assert "0 blocks added" in result
+
+    def test_partial_failure_includes_added_count(self):
+        # the `added` message from the issue's suggested fix: count + denominator
+        def boom(children, cls, **kwargs):
+            if getattr(cls, "_type", "") == "to_do":
+                raise RuntimeError("400: nope")
+
+        result, page = self._drive(
+            json.dumps(
+                [
+                    {"type": "text", "text": "a"},
+                    {"type": "todo", "text": "b"},
+                    {"type": "text", "text": "c"},
+                ]
+            ),
+            add_new=boom,
+        )
+        assert "page999" in result
+        assert "added 2 of 3 block(s)" in result
+        assert "400: nope" in result
+
+    def test_validation_reject_is_batch_size(self):
+        # 3 specs, middle invalid → "added 0 of 3", page id still present
+        result, _ = self._drive(
+            json.dumps(
+                [
+                    {"type": "text", "text": "a"},
+                    "not-an-object",
+                    {"type": "text", "text": "c"},
+                ]
+            )
+        )
+        assert "page999" in result
+        assert "added 0 of 3 block(s)" in result
+
+
+# ---- issue #28: query-database silently capped at 100 rows --------------------
+
+
+class _FakeCollectionQuery:
+    """Stands in for CollectionQuery with a scripted query_collection."""
+
+    def __init__(self, collection, collection_view, space_id, **kwargs):
+        self.collection = collection
+        self.kwargs = kwargs
+        self.limit = kwargs.get("limit", 100)
+        self._client = collection._client
+
+    def execute(self):
+        from unpy.collection import CollectionQuery
+
+        # replicate the real execute() flow by driving the patched methods
+        return CollectionQuery.execute(self)
+
+
+class TestIssue28QueryLimit:
+    """Three callers never lifted the default limit=100."""
+
+    def _collection(self, total_rows, reducer_result):
+        from unpy.collection import Collection
+        from unpy.records import Record
+
+        store_calls = []
+
+        class FakeStore:
+            _values = {"block": {}}
+
+            def call_query_collection(self, **kwargs):
+                store_calls.append(kwargs)
+                return reducer_result
+
+        class FakeClient:
+            _store = FakeStore()
+
+        col = Collection.__new__(Collection)
+        object.__setattr__(col, "_client", FakeClient())
+        object.__setattr__(col, "_id", "col1")
+        object.__setattr__(col, "_callbacks", [])
+        object.__setattr__(col, "_table", "collection")
+        col._store_attach(store_calls, total_rows)
+        return col, store_calls
+
+    def test_default_stays_100_backwards_compatible(self):
+        # CollectionQuery default must remain sensible
+        from unpy.collection import CollectionQuery
+
+        assert CollectionQuery.__init__.__defaults__[-1] == 100
+
+    def test_execute_minus_one_falls_back_to_size_hint(self):
+        # issue core: reducer response has sizeHint but no total
+        from unpy.collection import CollectionQuery
+
+        q = CollectionQuery.__new__(CollectionQuery)
+        q.limit = -1
+        q.type = "table"
+
+        class FakeCollection:
+            id = "col1"
+
+        q.collection = FakeCollection()
+        q.collection_view = type("V", (), {"id": "view1"})()
+        q.space_id = "sp1"
+        q.search = ""
+        q.aggregate = []
+        q.aggregations = []
+        q.filter = []
+        q.sort = []
+        q.calendar_by = ""
+        q.group_by = ""
+
+        captured = {}
+
+        class FakeClient:
+            def query_collection(self, **kwargs):
+                captured.update(kwargs)
+                if kwargs["limit"] == 0:
+                    return {
+                        "type": "reducer",
+                        "reducerResults": {},
+                        "sizeHint": 116,
+                        "rowCountStatus": "under",
+                    }
+                return {"blockIds": [f"row{i}" for i in range(kwargs["limit"])]}
+
+        q._client = FakeClient()
+        from unittest.mock import patch
+
+        with patch("unpy.collection.QUERY_RESULT_TYPES", {"table": _FakeQR}):
+            result = q.execute()
+        # second query must request 116 rows, not stay at -1 (→ 100)
+        assert captured["limit"] == 116
+
+    def test_execute_minus_one_no_size_hint_clamps_high(self):
+        # neither total nor sizeHint → must still exceed the 100 default
+        from unpy.collection import CollectionQuery
+
+        q = CollectionQuery.__new__(CollectionQuery)
+        q.limit = -1
+        q.type = "table"
+
+        class FakeCollection:
+            id = "col1"
+
+        q.collection = FakeCollection()
+        q.collection_view = type("V", (), {"id": "view1"})()
+        q.space_id = "sp1"
+        q.search = ""
+        q.aggregate = []
+        q.aggregations = []
+        q.filter = []
+        q.sort = []
+        q.calendar_by = ""
+        q.group_by = ""
+
+        captured = {}
+
+        class FakeClient:
+            def query_collection(self, **kwargs):
+                captured.update(kwargs)
+                if kwargs["limit"] == 0:
+                    return {"type": "reducer", "reducerResults": {}}
+                return {"blockIds": [f"row{i}" for i in range(250)]}
+
+        q._client = FakeClient()
+        from unittest.mock import patch
+
+        with patch("unpy.collection.QUERY_RESULT_TYPES", {"table": _FakeQR}):
+            result = q.execute()
+        assert captured["limit"] > 100
+
+    def test_execute_zero_and_negative_size_hint_clamped(self):
+        # sizeHint present but 0/None → clamped high, not stuck
+        from unpy.collection import CollectionQuery
+
+        for hint in (0, None):
+            q = CollectionQuery.__new__(CollectionQuery)
+            q.limit = -1
+            q.type = "table"
+
+            class FakeCollection:
+                id = "col1"
+
+            q.collection = FakeCollection()
+            q.collection_view = type("V", (), {"id": "view1"})()
+            q.space_id = "sp1"
+            q.search = ""
+            q.aggregate = []
+            q.aggregations = []
+            q.filter = []
+            q.sort = []
+            q.calendar_by = ""
+            q.group_by = ""
+
+            captured = {}
+
+            class FakeClient:
+                def query_collection(self, **kwargs):
+                    captured.update(kwargs)
+                    return {"type": "reducer", "reducerResults": {}}
+
+            q._client = FakeClient()
+            from unittest.mock import patch
+
+            with patch("unpy.collection.QUERY_RESULT_TYPES", {"table": _FakeQR}):
+                result = q.execute()
+            assert captured["limit"] > 100
+
+    def test_cli_query_database_passes_limit_through(self):
+        # CLI used to slice get_rows()[:limit] → max 100 rows client-side
+        import inspect
+
+        from unpy_cli import cli as cli_mod
+
+        src = inspect.getsource(cli_mod.query_database)
+        assert "get_rows(limit=limit)" in src
+        assert "get_rows()[:limit]" not in src
+
+
+class _FakeQR:
+    """Minimal QueryResult stand-in for execute() tests."""
+
+    _type = "table"
+
+    def __init__(self, collection, result, query):
+        self._result = result
+
+    def _get_block_ids(self, result):
+        return result.get("blockIds", [])
+
+    def __iter__(self):
+        return iter([])

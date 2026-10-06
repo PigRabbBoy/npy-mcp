@@ -6,6 +6,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-10-06
+
+### Fixed
+- `create_page` called without `blocks` crashed with `UnboundLocalError`
+  after the page had already been created (issue #29): `failures` was only
+  assigned inside `if blocks:`, so the tool returned "Error executing tool
+  create_page" and the caller never got the new page id — a retry would
+  create a duplicate page. `count`/`failures` are now initialised before
+  the branch, and partial-failure reports include the "added X of N
+  block(s)" summary that was previously computed but discarded.
+- `query_database(fetch_all=true)` (MCP) and `refresh_collection_rows`
+  (core) silently returned at most 100 rows (issue #28): the `limit: -1`
+  path fetched the remote total but the reducer response carries no
+  `total` key — only `sizeHint` — so the limit stayed at `-1` and Notion
+  returned its default page of 100. `execute()` now falls back to
+  `sizeHint` (as `QueryResult` already did) and clamps to a high limit
+  when the response carries neither key.
+
+### Fixed (CLI)
+- `unpy query-database --limit N` was silently capped at 100 rows
+  (issue #28): `get_rows()` was fetched with its default limit and
+  `--limit` only sliced that client-side. The requested limit is now
+  passed straight through to the query; `--limit 0` (or any value ≤ 0)
+  means "fetch every row" via the fixed `limit=-1` path.
+
 ## [2.1.0] - 2026-10-01
 
 ### Added
