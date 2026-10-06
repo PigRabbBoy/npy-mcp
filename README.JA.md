@@ -262,6 +262,7 @@ uv run unpy search "project"                    # ページ/ブロックを検�
 uv run unpy get-page <PAGE_ID> --depth 2        # ページツリーを markdown で
 uv run unpy list-pages                          # 最近のトップレベルページ
 uv run unpy get-database <DB_ID> --sample 5     # スキーマ + サンプル行
+uv run unpy get-database <DB_ID> --full-schema --format json  # + relation/rollup/formula/options の定義
 uv run unpy query-database <DB_ID> --limit 20   # 行を取得
 uv run unpy get-image <BLOCK_ID>                # 画像をダウンロード
 uv run unpy get-comments <PAGE_ID>              # コメントを読む

@@ -268,6 +268,7 @@ uv run unpy search "project"                    # search pages/blocks
 uv run unpy get-page <PAGE_ID> --depth 2        # page tree as markdown
 uv run unpy list-pages                          # recent top-level pages
 uv run unpy get-database <DB_ID> --sample 5     # schema + sample rows
+uv run unpy get-database <DB_ID> --full-schema --format json  # + relation/rollup/formula/option definitions
 uv run unpy query-database <DB_ID> --limit 20   # query rows
 uv run unpy get-image <BLOCK_ID>                # download an image
 uv run unpy get-comments <PAGE_ID>              # read comments

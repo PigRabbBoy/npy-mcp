@@ -262,6 +262,7 @@ uv run unpy search "project"                    # ค้นหา page/block
 uv run unpy get-page <PAGE_ID> --depth 2        # ต้นไม้ page เป็น markdown
 uv run unpy list-pages                          # page ระดับบนล่าสุด
 uv run unpy get-database <DB_ID> --sample 5     # schema + sample rows
+uv run unpy get-database <DB_ID> --full-schema --format json  # + นิยาม relation/rollup/formula/options
 uv run unpy query-database <DB_ID> --limit 20   # ดึง rows
 uv run unpy get-image <BLOCK_ID>                # ดาวน์โหลดรูป
 uv run unpy get-comments <PAGE_ID>              # อ่านคอมเมนต์

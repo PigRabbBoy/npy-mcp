@@ -6,6 +6,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (CLI)
+- `unpy get-database --full-schema` (issue #31). With `--format json`, each
+  `schema` entry gains `id` and type-specific fields: `options` (+ status
+  `groups`), relation `target` / `single` / `reverse` / `reverse_id`,
+  rollup `relation_property` / `target_property` names (+ raw ids) and
+  `aggregation`, formula `expression` in `prop("Name")` form (+
+  `raw_expression`, `refs`). Deleted properties are skipped. Without
+  `--format json` it prints the same `## Full schema` section as the MCP
+  tool. Without the flag, JSON entries stay `{name, type}`.
+
+### Changed
+- The full-schema extraction now lives in one place,
+  `unpy.schema.describe_schema` / `full_schema_markdown` in unpy-core.
+  The CLI and the MCP `get_database(full_schema=true)` both call it, so
+  the two can't drift. `formula_eval.build_expr` reads stored formulas
+  through the same `unpy.schema.formula_parts` walk.
+
+### Fixed
+- `get_database(full_schema=true)` printed formula property references as
+  positional placeholders (`contains(format({0}), "Signed")`). They now
+  print as `prop("Status")`, which is how the Notion formula editor shows
+  them. This includes member access on related pages
+  (`current.prop("Code")`).
+- `get_database(full_schema=true)` printed rollup `relation_property` /
+  `target_property` as bare property ids. It now prints
+  `Name [id: <id>]`, resolving the target property against the related
+  database's schema.
+- `get_database(full_schema=true)` never printed `reverse_name` for two-way
+  relations. It only checked `autoRelate.enabled`, which Notion always
+  writes as `false`. The reverse name now comes from the relation's
+  `property` field (the synced property's id on the target database).
+
 ## [2.1.1] - 2026-10-06
 
 ### Fixed

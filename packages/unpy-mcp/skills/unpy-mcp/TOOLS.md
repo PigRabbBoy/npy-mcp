@@ -89,6 +89,34 @@ Fetch a Notion database schema and sample rows.
 
 **Returns:** Database name, column schema (name + type), and sample row data as markdown.
 
+With `full_schema`, a `## Full schema` section lists every live column with its property id:
+
+```
+  - **Project** (relation) [id: rl01]
+      target: <data source id>
+      single: yes
+      reverse_name: Tasks [id: rv01]        ← two-way only: synced property on the target
+  - **Project owner** (rollup) [id: ru01]
+      relation_property: Project [id: rl01]
+      target_property: Owner [id: ow01]
+      aggregation: show_original
+  - **Signed** (formula) [id: fo01]
+      expression: contains(format(prop("Status")), "Signed")
+  - **Status** (status) [id: st01]
+      options: ['Not started', 'In progress', 'Done']
+```
+
+**CLI:** `unpy get-database <id> --full-schema` prints the same section (the CLI and MCP call the same `unpy.schema` code). Add `--format json` for machine-readable output. Each `schema` entry then has `id`, `name` and `type`, plus:
+
+| Type | Extra JSON fields |
+|---|---|
+| `select`, `multi_select`, `status` | `options` (names, in order); `status` also `groups` (`[{name, options}]`) |
+| `relation` | `target` (data source id), `single` (bool), `reverse` (synced property name on the target, `null` if one-way), `reverse_id` |
+| `rollup` | `relation_property`, `target_property` (names), `relation_property_id`, `target_property_id`, `aggregation` (`show_original` when unset) |
+| `formula` | `expression` (refs as `prop("Name")`), `raw_expression` (stored form, refs as `{N}`), `refs` (`[{property, collection_id, name}]`) |
+
+A name that can't be resolved (for example, the target database isn't readable) comes back as `null`, and its id is still returned.
+
 ---
 
 ### `query_database`
