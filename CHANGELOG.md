@@ -6,6 +6,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-06
+
+### Added
+- **`set-column-description` / `set_column_description`** (issue #39): set
+  or clear a property's description (the hover help text) through the
+  high-level schema op, preserving every other field. Column specs in
+  `create-database` / `create_database` and `add-column` / `add_column`
+  now honour a `"description"` key, and `--full-schema` readback includes
+  it.
+- **`get-database --full-schema`** on the CLI (issue #31): JSON output with
+  per-type detail — relation target/reverse/limit, rollup names +
+  aggregation, formula expression (`prop("Name")` refs) + raw expression +
+  refs, select/multi-select/status options and status groups, descriptions,
+  tombstoned properties skipped. The extraction lives in `unpy-core`
+  (`unpy.schema.full_schema_entries`) shared with the MCP tool, so the two
+  outputs cannot drift.
+- **`create-view` / `create_view` + `list-views` / `list_views`** (issue
+  #37): create named database views (table/board/list/gallery/calendar/
+  timeline) with hand-writable filters (property NAMES, human operators,
+  `"me"` for persons, option names checked against the schema, status
+  groups, `raw` escape hatch), sorts (shorthand `"Name,-Due"` accepted),
+  board/table grouping, visible properties in display order (title always
+  visible on tables), and date columns for calendars/timelines. Idempotent
+  by name — an existing view is updated in place (same view id, tab
+  position). Readback uses property names for provisioning diffs.
+- **`create-template` / `create_template` + `list-templates` /
+  `list_templates`** (issue #38): create database templates (the pages
+  under **New ▾**) with default property values by NAME (options checked
+  strictly against the schema; computed columns rejected) and a body built
+  from the shared block-spec format (replaces the previous body when
+  given), optional icon and `--default` (collection-level default plus
+  per-view overrides rewritten). Idempotent by title.
+
+### Fixed
+- **`get_database` with a collection/data-source id crashed**
+  (issue #30): the `#9`-added `block.id` line dereferenced `None` when the
+  id resolved through the collection fallback. It now prints
+  "(none; looked up by data source id)" — walking a schema by its relation
+  targets works.
+- **`get_database` ignored its `refresh` parameter** (issue #36): it never
+  passed `force_refresh` to `get_block`; `query_database` did. Both now
+  honour it (same class as #22).
+- **`unpy add-column` failed with 400 "Collection schema updates must use
+  high-level schema operations"** (issue #33): the CLI still wrote the
+  whole schema with a plain `set`. Both the CLI and the MCP tool now share
+  one implementation (`unpy.schema.add_column_prop`) that submits
+  `build_collection_schema_update` operations — and two-way relations are
+  written as forward+reverse pairs in one transaction (fixing the silent
+  one-way relations the old CLI path produced). `create-database` on the
+  CLI also applies the deferred two-way-relation pass the MCP tool already
+  had.
+- **CLI write commands crashed with ModuleNotFoundError: unpy_mcp**
+  (issue #32): the CLI imported helpers from `unpy_mcp`, which is not a
+  declared dependency of `unpy-cli` — a CLI-only install worked for reads
+  and crashed mid-write (half-written pages/databases). All shared logic
+  moved to unpy-core: `unpy.schema` (column builders + high-level
+  add-column), `unpy.blocks` (block-spec builder), `unpy.formula_eval`
+  (the formula interpreter), `unpy.csv_import`, `unpy.views`,
+  `unpy.templates`. `unpy_mcp.formula_eval` remains as a shim re-exporting
+  the core module; server-level names (`_build_collection_schema`,
+  `_add_blocks_from_specs_core`, …) remain as deprecated aliases so
+  existing imports keep working.
+
+### Fixed (CLI)
+- `add-column` now reports "Cannot add column: …" errors with exit 1
+  before any write when the spec is invalid (unknown property, missing
+  expression, bad options JSON).
+
 ## [2.1.1] - 2026-10-06
 
 ### Fixed

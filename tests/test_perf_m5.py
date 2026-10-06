@@ -79,7 +79,9 @@ class TestBoundedSchemaCache:
             srv._SCHEMA_CACHE_MAX = old_max
 
     def test_formula_ast_cache_bounded(self):
-        import unpy_mcp.formula_eval as fev
+        # the interpreter lives in unpy-core (issue #32); unpy_mcp.formula_eval
+        # is a shim with the same __dict__, so either name controls the cache
+        import unpy.formula_eval as fev
 
         old_max = fev._AST_CACHE_MAX
         try:

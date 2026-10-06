@@ -172,15 +172,59 @@ def list_pages(
 def get_database(
     database_id: str = typer.Argument(..., help="Database block URL/ID or collection ID"),
     sample_rows: int = typer.Option(5, "--sample", "-s", help="Number of sample rows to show"),
+    full_schema: bool = typer.Option(False, "--full-schema", help="Include full column definitions (relation targets, rollup configs, formula expressions, select options) — rich enough to diff for idempotent provisioning"),
     format: str = typer.Option("markdown", "--format", "-f", help="markdown | json"),
     token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
 ) -> None:
     """Fetch a database schema and sample rows."""
     client = get_client(token_arg=token)
+    block = client.get_block(database_id)
     collection = _resolve_collection(client, database_id)
     if collection is None:
         typer.echo(f"Database not found: {database_id}", err=True)
         raise typer.Exit(1)
+    try:
+        name = collection.name if hasattr(collection, "name") else "(unnamed)"
+        schema = collection.get_schema_properties() if hasattr(collection, "get_schema_properties") else []
+    except Exception as exc:
+        typer.echo(f"Failed to read database schema: {exc}", err=True)
+        raise typer.Exit(1)
+    if full_schema:
+        # rich readback shared with the MCP tool (issue #31) — names, not ids
+        from unpy.schema import full_schema_entries
+        entries = full_schema_entries(collection, client)
+        if format == "json":
+            import dataclasses
+            payload = {
+                "name": name,
+                "block_id": block.id if block is not None else None,
+                "data_source_id": collection.id,
+                "schema": entries,
+            }
+            typer.echo(json.dumps(payload, indent=2, ensure_ascii=False, default=lambda o: dataclasses.asdict(o) if dataclasses.is_dataclass(o) else str(o)))
+            return
+        lines = [f"# {name}", ""]
+        lines.append(f"  block id: {block.id if block is not None else '(none; looked up by data source id)'}")
+        lines.append(f"  data source id: {collection.id}")
+        lines.append("")
+        lines.append("## Columns")
+        for prop in schema:
+            lines.append(f"  - **{prop.get('name', '?')}** ({prop.get('type', '?')})")
+        lines.append("")
+        lines.append("## Full schema")
+        from unpy.schema import render_full_schema_markdown
+        lines.extend(render_full_schema_markdown(collection, client))
+        typer.echo("\n".join(lines))
+        return
+    if format == "json":
+        payload = {
+            "name": name,
+            "block_id": block.id if block is not None else None,
+            "data_source_id": collection.id,
+            "schema": [{"name": p.get("name", "?"), "type": p.get("type", "?")} for p in schema],
+        }
+        typer.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
     typer.echo(render_database(collection, sample_rows=sample_rows, format=format))
 
 
@@ -233,17 +277,45 @@ def create_page(
     if icon:
         page.icon = icon
     if blocks:
-        from unpy_mcp.server import _add_blocks_from_specs, _batch_denominator
+        from unpy.blocks import add_blocks_from_specs_core, batch_denominator
         specs = json.loads(blocks)
-        count, failures = _add_blocks_from_specs(page, specs)
+        count, failures = _add_blocks_from_specs_impl(page, specs)
         if failures:
             typer.echo(
-                f"Added {count} of {_batch_denominator(specs, failures)} block(s); "
+                f"Added {count} of {batch_denominator(specs, failures)} block(s); "
                 + "; ".join(failures),
                 err=True,
             )
             raise typer.Exit(1)
     typer.echo(f"Created page {page.id} — {page.get_browseable_url()}")
+
+
+def _add_blocks_from_specs_impl(page, specs):
+    """Thin wrapper over the core block-spec builder with the CLI type map."""
+    from unpy.blocks import add_blocks_from_specs_core
+
+    from unpy.block import (
+        BulletedListBlock, CalloutBlock, CodeBlock, DividerBlock,
+        EquationBlock, HeaderBlock, NumberedListBlock, QuoteBlock,
+        SubheaderBlock, SubsubheaderBlock, TextBlock, TodoBlock, ToggleBlock,
+    )
+
+    TYPE_MAP = {
+        "text": TextBlock,
+        "todo": TodoBlock,
+        "header": HeaderBlock,
+        "subheader": SubheaderBlock,
+        "subsubheader": SubsubheaderBlock,
+        "callout": CalloutBlock,
+        "bulleted_list": BulletedListBlock,
+        "numbered_list": NumberedListBlock,
+        "quote": QuoteBlock,
+        "code": CodeBlock,
+        "divider": DividerBlock,
+        "toggle": ToggleBlock,
+        "equation": EquationBlock,
+    }
+    return add_blocks_from_specs_core(page, specs, TYPE_MAP)
 
 
 @app.command(name="append-blocks")
@@ -254,17 +326,18 @@ def append_blocks(
 ) -> None:
     """Append blocks to a page. Supports: text, todo, header, subheader, subsubheader, callout, bulleted_list, numbered_list, quote, code (language field), divider, toggle, equation."""
     _check_write_enabled()
-    from unpy_mcp.server import _add_blocks_from_specs, _batch_denominator
+    from unpy.blocks import batch_denominator
+
     client = get_client(token_arg=token)
     parent = client.get_block(page_id)
     if parent is None:
         typer.echo(f"Page not found: {page_id}", err=True)
         raise typer.Exit(1)
     specs = json.loads(blocks)
-    count, failures = _add_blocks_from_specs(parent, specs)
+    count, failures = _add_blocks_from_specs_impl(parent, specs)
     if failures:
         typer.echo(
-            f"Added {count} of {_batch_denominator(specs, failures)} block(s) to {page_id}; "
+            f"Added {count} of {batch_denominator(specs, failures)} block(s) to {page_id}; "
             + "; ".join(failures),
             err=True,
         )
@@ -572,12 +645,14 @@ def create_database(
         raise typer.Exit(1)
     from unpy.block import CollectionViewBlock, CollectionViewPageBlock
 
-    from unpy_mcp.server import _build_collection_schema
+    from unpy.operations import build_collection_schema_update
+    from unpy.schema import build_collection_schema  # unpy-core, not unpy_mcp (#32)
 
+    deferred = []
     if columns:
         col_specs = json.loads(columns)
         space_id = client.current_space.id if client.current_space else ""
-        schema = _build_collection_schema(
+        schema = build_collection_schema(
             [s for s in col_specs if s.get("type") not in ("rollup", "formula")],
             client,
             space_id,
@@ -588,7 +663,18 @@ def create_database(
                 spec["_own_schema"] = schema
                 spec["_own_pointer"] = own_pointer
                 spec["_space_id"] = space_id
-        schema = _build_collection_schema(col_specs, client, space_id)
+        schema = build_collection_schema(col_specs, client, space_id)
+        # Two-way relations: a forward prop with a "property" back-ref is
+        # rejected unless the reverse prop lands in the same transaction,
+        # and create_record can't batch cross-collection schema writes —
+        # so strip reverse-bearing relations out of the create payload and
+        # write each forward+reverse pair afterwards (matches the MCP tool).
+        for spec in col_specs:
+            if spec.get("type") == "relation" and spec.get("reverse_name"):
+                fwd_pid = spec.get("id")
+                fwd = schema.pop(fwd_pid, None)
+                if fwd:
+                    deferred.append((spec, fwd_pid, fwd))
     else:
         schema = {"title": {"name": "Name", "type": "title"}}
     if full_page:
@@ -601,6 +687,36 @@ def create_database(
     if icon:
         cvb.icon = icon
     cvb.views.add_new(view_type="table")
+    if deferred:
+        space_id = client.current_space.id if client.current_space else ""
+        ops = [build_collection_schema_update(collection_id, fwd_pid, fwd)
+               for _, fwd_pid, fwd in deferred]
+        for spec, fwd_pid, fwd in deferred:
+            reverse_prop = {
+                "name": spec.get("reverse_name") or spec.get("name"),
+                "type": "relation",
+                "collection_id": collection_id,
+                "collection_pointer": {
+                    "id": collection_id,
+                    "table": "collection",
+                    "spaceId": space_id,
+                },
+                "property": fwd_pid,
+                "version": "v2",
+                "autoRelate": {"enabled": False},
+            }
+            target_id = fwd.get("collection_id", "")
+            if target_id and target_id != collection_id:
+                ops.append(build_collection_schema_update(
+                    target_id, fwd["property"], reverse_prop
+                ))
+            else:
+                # self-referencing: single prop points at itself
+                fwd["property"] = fwd_pid
+                ops = [build_collection_schema_update(
+                    collection_id, fwd_pid, fwd
+                )]
+        client.submit_transaction(ops)
     typer.echo(f"Created database: {cvb.id}")
 
 
@@ -615,60 +731,18 @@ def add_column(
     """Add a column to an existing database."""
     _check_write_enabled()
     client = get_client(token_arg=token)
-    collection = _resolve_collection(client, database_id)
-    if collection is None:
-        typer.echo(f"Database not found: {database_id}", err=True)
+    from unpy.schema import add_column_prop, resolve_collection_for_write
+
+    collection = resolve_collection_for_write(client, database_id)
+    if isinstance(collection, str):
+        typer.echo(collection, err=True)
         raise typer.Exit(1)
-    from unpy_mcp.server import (
-        _build_relation_prop, _build_rollup_prop, _build_select_options, _fev,
-    )
-
-    import uuid as _uuid
-
-    prop_id = _uuid.uuid4().hex[:4]
-    prop = {"name": name, "type": type}
-    if type in ("select", "multi_select", "status") and options:
-        prop["options"] = [
-            _build_select_options(json.loads(options))
-        ]
-    if type in ("relation", "formula", "rollup"):
-        spec = json.loads(options) if options else {}
-        spec.setdefault("name", name)
-        spec["type"] = type
-        space_id = client.current_space.id if client.current_space else ""
-        if type == "relation":
-            prop.update(_build_relation_prop(spec, client, space_id))
-        elif type == "formula":
-            expr = spec.get("expression", "")
-            if not expr:
-                typer.echo("formula columns need --options with 'expression'", err=True)
-                raise typer.Exit(1)
-            own_pointer = {
-                "id": getattr(collection, "id", ""),
-                "table": "collection",
-                "spaceId": space_id,
-            }
-            prop_meta = {}
-            for pid2, p2 in (collection.get("schema") or {}).items():
-                meta = {"property": pid2}
-                if p2.get("type") == "relation":
-                    tgt = p2.get("collection_id") or (p2.get("collection_pointer") or {}).get("id")
-                    meta["collection"] = {"id": tgt, "table": "collection", "spaceId": space_id}
-                else:
-                    meta["collection"] = own_pointer
-                prop_meta[p2.get("name", "")] = meta
-            prop["version"] = "v2"
-            prop["formula2"] = {
-                "code": _fev.encode_expr(expr, prop_meta),
-                "result_type": {"type": "text"},
-            }
-        elif type == "rollup":
-            spec["_own_schema"] = collection.get("schema") or {}
-            prop.update(_build_rollup_prop(spec, client))
-    current_schema = collection.get("schema") or {}
-    current_schema[prop_id] = prop
-    collection.set("schema", current_schema)
-    typer.echo(f"Added column '{name}' (type: {type}, id: {prop_id})")
+    try:
+        msg, _pid = add_column_prop(client, collection, name, type, options)
+    except ValueError as exc:
+        typer.echo(f"Cannot add column: {exc}", err=True)
+        raise typer.Exit(1)
+    typer.echo(msg)
 
 
 @app.command(name="rename-column")
@@ -681,19 +755,19 @@ def rename_column(
     """Rename a database column (low-risk, reversible)."""
     _check_write_enabled()
     client = get_client(token_arg=token)
-    from unpy_mcp.server import _resolve_collection_for_write, _find_column
-    collection = _resolve_collection_for_write(client, database_id)
+    from unpy.operations import build_collection_schema_update
+    from unpy.schema import find_column, resolve_collection_for_write
+    collection = resolve_collection_for_write(client, database_id)
     if isinstance(collection, str):
         typer.echo(collection, err=True)
         raise typer.Exit(1)
     schema = collection.get("schema") or {}
-    prop_id, prop = _find_column(schema, column)
+    prop_id, prop = find_column(schema, column)
     if prop_id is None:
         typer.echo(f"Column not found: '{column}'. Use get-database to list columns.", err=True)
         raise typer.Exit(1)
     new_prop = dict(prop)
     new_prop["name"] = new_name
-    from unpy.operations import build_collection_schema_update
     client.submit_transaction([
         build_collection_schema_update(collection.id, prop_id, new_prop)
     ])
@@ -709,13 +783,13 @@ def delete_column(
     """Delete a database column (destroys that property's data in every row; recoverable in Notion's UI)."""
     _check_write_enabled()
     client = get_client(token_arg=token)
-    from unpy_mcp.server import _resolve_collection_for_write, _find_column
-    collection = _resolve_collection_for_write(client, database_id)
+    from unpy.schema import find_column, resolve_collection_for_write
+    collection = resolve_collection_for_write(client, database_id)
     if isinstance(collection, str):
         typer.echo(collection, err=True)
         raise typer.Exit(1)
     schema = collection.get("schema") or {}
-    prop_id, prop = _find_column(schema, column)
+    prop_id, prop = find_column(schema, column)
     if prop_id is None:
         typer.echo(f"Column not found: '{column}'. Use get-database to list columns.", err=True)
         raise typer.Exit(1)
@@ -741,6 +815,216 @@ def delete_column(
         },
     ])
     typer.echo(f"Deleted column '{prop.get('name')}' (id: {prop_id})")
+
+
+@app.command(name="set-column-description")
+def set_column_description(
+    database_id: str = typer.Argument(..., help="Database URL or ID (or collection id)"),
+    column: str = typer.Option(..., "--column", "-c", help="Column name or property id"),
+    description: str = typer.Option(..., "--description", "-d", help="Description text (empty string clears it)"),
+    token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
+) -> None:
+    """Set (or clear) a property's description (the hover help text)."""
+    _check_write_enabled()
+    from unpy.schema import resolve_collection_for_write, set_property_description
+
+    client = get_client(token_arg=token)
+    collection = resolve_collection_for_write(client, database_id)
+    if isinstance(collection, str):
+        typer.echo(collection, err=True)
+        raise typer.Exit(1)
+    try:
+        prop_id, _old = set_property_description(client, collection, column, description)
+    except ValueError as exc:
+        typer.echo(f"Cannot set description: {exc}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Description of column '{column}' set (id: {prop_id})")
+
+
+@app.command(name="create-view")
+def create_view(
+    database_id: str = typer.Argument(..., help="Database block URL/ID or collection ID"),
+    name: str = typer.Option(..., "--name", help="View name (a view with the same name is updated in place)"),
+    type: str = typer.Option("table", "--type", help="table | board | list | gallery | calendar | timeline"),
+    filter: str = typer.Option("", "--filter", help='Hand-writable JSON: {"property","operator","value"}, {"and":[...]}/{"or":[...]} (nestable), or {"property","raw":{...}}'),
+    sort: str = typer.Option("", "--sort", help='JSON [{"property","direction"}] or shorthand "Name,-Due"'),
+    group_by: str = typer.Option("", "--group-by", help="Group by a select/status/person/checkbox/relation column name"),
+    properties: str = typer.Option("", "--properties", help='Visible properties in display order: ["Name","Status"] or [{"property","width"?,"visible"?}]'),
+    date_property: str = typer.Option("", "--date-property", help="Date column for calendar/timeline views (default: first date column)"),
+    token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
+) -> None:
+    """Create or update a database view (idempotent by --name)."""
+    _check_write_enabled()
+    from unpy.collection import CollectionView, COLLECTION_VIEW_TYPES
+    from unpy.views import (
+        build_view_payload, find_view_by_name,
+    )
+
+    client = get_client(token_arg=token)
+    collection = _resolve_collection(client, database_id)
+    if collection is None:
+        typer.echo(f"Database not found: {database_id}", err=True)
+        raise typer.Exit(1)
+
+    existing = find_view_by_name(collection, name)
+    if existing is not None and getattr(existing, "type", "") != type:
+        typer.echo(
+            f"Warning: view '{name}' exists as '{existing.type}' — updating in place, keeping type '{existing.type}'",
+            err=True,
+        )
+    existing = find_view_by_name(collection, name)  # resolve again for payload
+    try:
+        payload = build_view_payload(
+            client, collection, type, name,
+            filter_spec=filter, sort_spec=sort, group_by=group_by,
+            properties=properties, date_property=date_property,
+            existing_view=existing,
+        )
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1)
+    for w in payload.get("warnings") or []:
+        typer.echo(f"Warning: {w}", err=True)
+
+    if existing is None:
+        # create: the view record must live on the database block
+        block = getattr(collection, "parent", None)
+        block._client._store  # ensure store warmed
+        view_id = client.create_record(
+            "collection_view",
+            parent=block,
+            type=type,
+            name=name,
+            format=payload.get("format") or {},
+            **({"query2": payload["query2"]} if payload.get("query2") else {}),
+        )
+        # mirror parent's view_ids locally so find/list sees it
+        ids = block.get("view_ids") or []
+        if view_id not in ids:
+            ids = ids + [view_id]
+            block.set("view_ids", ids)
+        typer.echo(f"Created view '{name}' ({type}): {view_id}")
+        return
+
+    # update in place (idempotent)
+    cls = COLLECTION_VIEW_TYPES.get(existing.get("type", ""), CollectionView)
+    vid = existing.id
+    ops = []
+    if payload.get("query2"):
+        ops.append({"table": "collection_view", "id": vid,
+                    "path": ["query2"], "command": "update",
+                    "args": {"primitiveOp": {"command": "update",
+                                             "args": dict(payload["query2"])}}})
+    else:
+        ops.append({"table": "collection_view", "id": vid,
+                    "path": ["query2"], "command": "set", "args": {}})
+    if payload.get("format"):
+        ops.append({"table": "collection_view", "id": vid,
+                    "path": ["format"], "command": "update",
+                    "args": {"primitiveOp": {"command": "update",
+                                             "args": dict(payload["format"])}}})
+    client.submit_transaction(ops)
+    typer.echo(f"Updated view '{name}' ({type}): {vid}")
+
+
+@app.command(name="list-views")
+def list_views(
+    database_id: str = typer.Argument(..., help="Database block URL/ID or collection ID"),
+    format: str = typer.Option("json", "--format", "-f", help="json | markdown"),
+    token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
+) -> None:
+    """List a database's views with property NAMES (for provisioning diff)."""
+    from unpy.views import list_views as _list_views
+
+    client = get_client(token_arg=token)
+    collection = _resolve_collection(client, database_id)
+    if collection is None:
+        typer.echo(f"Database not found: {database_id}", err=True)
+        raise typer.Exit(1)
+    views = _list_views(collection, client)
+    if format == "json":
+        typer.echo(json.dumps({"views": views}, indent=2, ensure_ascii=False))
+        return
+    if not views:
+        typer.echo("(no views)")
+        return
+    for v in views:
+        flags = []
+        if v.get("group_by"):
+            flags.append(f"group by {v['group_by']}")
+        if v.get("date_property"):
+            flags.append(f"date {v['date_property']}")
+        typer.echo(f"- **{v['name'] or v['id']}** ({v['type']})"
+                   + (f" — {', '.join(flags)}" if flags else ""))
+        if v.get("sort"):
+            typer.echo("    sort: " + ", ".join(
+                f"{s['property']} {'↑' if s['direction'] == 'ascending' else '↓'}"
+                for s in v["sort"]))
+        typer.echo(f"    visible: {', '.join(v.get('visible_properties') or [])}")
+
+
+@app.command(name="create-template")
+def create_template(
+    database_id: str = typer.Argument(..., help="Database block URL/ID or collection ID"),
+    title: str = typer.Option(..., "--title", help="Template title (an existing template with the same title is updated in place)"),
+    properties: str = typer.Option("", "--properties", help='Default property values by NAME: {"Status":"Draft","Priority":"Medium"} — options checked strictly against the schema'),
+    blocks: str = typer.Option("", "--blocks", "-b", help='Body blocks JSON (same format as append-blocks); replaces the existing body'),
+    icon: str = typer.Option("", "--icon", help="Emoji icon"),
+    default: bool = typer.Option(False, "--default", help="Make this the default template for every view"),
+    token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
+) -> None:
+    """Create or update a database template (idempotent by --title)."""
+    _check_write_enabled()
+    from unpy.schema import resolve_collection_for_write
+    from unpy.templates import create_template as _create
+
+    client = get_client(token_arg=token)
+    collection = resolve_collection_for_write(client, database_id)
+    if isinstance(collection, str):
+        typer.echo(collection, err=True)
+        raise typer.Exit(1)
+    try:
+        _row, message = _create(
+            client, collection, title,
+            properties=properties, blocks=blocks, icon=icon, default=default,
+        )
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1)
+    typer.echo(message)
+
+
+@app.command(name="list-templates")
+def list_templates(
+    database_id: str = typer.Argument(..., help="Database block URL/ID or collection ID"),
+    format: str = typer.Option("json", "--format", "-f", help="json | markdown"),
+    token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
+) -> None:
+    """List a database's templates with property NAMES (provisioning readback)."""
+    from unpy.schema import resolve_collection_for_write
+    from unpy.templates import list_templates as _list
+
+    client = get_client(token_arg=token)
+    collection = resolve_collection_for_write(client, database_id)
+    if isinstance(collection, str):
+        typer.echo(collection, err=True)
+        raise typer.Exit(1)
+    templates = _list(collection, client)
+    if format == "json":
+        typer.echo(json.dumps({"templates": templates}, indent=2, ensure_ascii=False))
+        return
+    if not templates:
+        typer.echo("(no templates)")
+        return
+    for t in templates:
+        star = " (default)" if t.get("default") else ""
+        typer.echo(f"- **{t['title'] or t['id']}**{star}")
+        if t.get("icon"):
+            typer.echo(f"    icon: {t['icon']}")
+        for k, v in (t.get("properties") or {}).items():
+            typer.echo(f"    {k}: {v}")
+        if t.get("body_blocks"):
+            typer.echo(f"    body: {len(t['body_blocks'])} block(s)")
 
 
 @app.command(name="create-media")
@@ -795,9 +1079,35 @@ def create_embed(
     if parent is None:
         typer.echo(f"Parent not found: {parent_id}", err=True)
         raise typer.Exit(1)
-    from unpy_mcp.server import _embed_type_map
+    from unpy.block import (
+        AbstractBlock, BookmarkBlock, CodepenBlock, DeepnoteBlock, DriveBlock,
+        EmbedBlock, ExcalidrawBlock, FigmaBlock, FramerBlock, GistBlock,
+        HtmlBlock, InvisionBlock, LoomBlock, MapsBlock, MixpanelBlock,
+        MiroBlock, ReplitBlock, SketchBlock, TweetBlock, TypeformBlock,
+    )
 
-    TYPE_MAP = _embed_type_map()
+    TYPE_MAP = {
+        "embed": EmbedBlock,
+        "bookmark": BookmarkBlock,
+        "tweet": TweetBlock,
+        "gist": GistBlock,
+        "figma": FigmaBlock,
+        "loom": LoomBlock,
+        "typeform": TypeformBlock,
+        "codepen": CodepenBlock,
+        "maps": MapsBlock,
+        "invision": InvisionBlock,
+        "framer": FramerBlock,
+        "drive": DriveBlock,
+        "html": HtmlBlock,
+        "miro": MiroBlock,
+        "excalidraw": ExcalidrawBlock,
+        "replit": ReplitBlock,
+        "deepnote": DeepnoteBlock,
+        "sketch": SketchBlock,
+        "abstract": AbstractBlock,
+        "mixpanel": MixpanelBlock,
+    }
     cls = TYPE_MAP.get(type)
     if cls is None:
         supported = ", ".join(sorted(TYPE_MAP.keys()))
@@ -873,10 +1183,10 @@ def import_csv(
     if parent is None:
         typer.echo(f"Parent not found: {parent_id}", err=True)
         raise typer.Exit(1)
-    from unpy_mcp.server import _import_csv_impl
+    from unpy.csv_import import import_csv_impl
 
     try:
-        db_id = _import_csv_impl(client, parent, file, title)
+        db_id = import_csv_impl(client, parent, file, title)
     except (FileNotFoundError, ValueError) as e:
         typer.echo(str(e), err=True)
         raise typer.Exit(1)

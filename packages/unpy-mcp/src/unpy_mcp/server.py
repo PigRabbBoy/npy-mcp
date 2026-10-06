@@ -29,7 +29,27 @@ from mcp.server import MCPServer
 from unpy import NotionClient
 from unpy.auth import resolve_auth
 from requests import HTTPError
-from . import formula_eval as _fev
+from . import formula_eval as _fev  # re-exports unpy.formula_eval (issue #32)
+from unpy.schema import (  # shared builders moved out of the MCP server (issue #32)
+    build_collection_schema as _build_collection_schema_shared,
+    build_select_options,
+    build_relation_prop,
+    build_rollup_prop,
+    resolve_collection_id,
+    find_prop_id,
+    fetch_schema,
+    find_column,
+)
+from unpy.blocks import (  # shared block-spec builders (issue #32)
+    add_blocks_from_specs_core,
+    validate_block_specs,
+    batch_denominator,
+    _add_single_block_spec,
+)
+from unpy.schema import (  # shared full-schema readback (issue #31)
+    full_schema_entries,
+    render_full_schema_markdown,
+)
 
 mcp = MCPServer("unpy-mcp")
 
@@ -1277,7 +1297,7 @@ def get_database(
         'true' / 'false' strings.
     """
     client = _get_client()
-    block = client.get_block(database_id)
+    block = client.get_block(database_id, force_refresh=refresh)
     collection = None
     if block is not None:
         collection = getattr(block, "collection", None)
@@ -1315,8 +1335,9 @@ def get_database(
     lines = [f"# {name}", ""]
     # Own identifiers: the block id callers pass in and the collection
     # ("data source") id that relation targets point at — two different id
-    # spaces, and callers need both (issue #9)
-    lines.append(f"  block id: {block.id}")
+    # spaces, and callers need both (issue #9). With a collection/data
+    # source id there is no block — say so instead of crashing (issue #30)
+    lines.append(f"  block id: {block.id if block is not None else '(none; looked up by data source id)'}")
     lines.append(f"  data source id: {collection.id}")
     lines.append("")
     lines.append("## Columns")
@@ -1331,39 +1352,9 @@ def get_database(
     if full_schema:
         lines.append("")
         lines.append("## Full schema")
-        raw_schema = collection.get("schema") or {}
-        for pid, p in raw_schema.items():
-            if p is None:
-                continue  # tombstoned (deleted) property
-            ptype = p.get("type", "?")
-            lines.append(f"  - **{p.get('name', '?')}** ({ptype}) [id: {pid}]")
-            if ptype == "relation":
-                tgt = p.get("collection_pointer") or {}
-                lines.append(
-                    f"      target: {p.get('collection_id') or tgt.get('id', '?')}"
-                )
-                lines.append(f"      single: {'yes' if p.get('limit') == 1 else 'no'}")
-                ar = p.get("autoRelate") or {}
-                if ar.get("enabled"):
-                    lines.append(f"      reverse_name: {ar.get('name', '')}")
-            elif ptype == "rollup":
-                lines.append(
-                    f"      relation_property: {p.get('relation_property', '?')}"
-                )
-                lines.append(f"      target_property: {p.get('target_property', '?')}")
-                # no aggregation field == "show original" (issue #14 round-trip)
-                lines.append(
-                    f"      aggregation: {p.get('aggregation') or 'show_original'}"
-                )
-            elif ptype == "formula":
-                try:
-                    src, _ = _fev.build_expr(p)
-                    lines.append(f"      expression: {src}")
-                except Exception:
-                    lines.append("      expression: (unparseable)")
-            elif ptype in ("select", "multi_select", "status"):
-                opts = [o.get("value", "") for o in p.get("options") or []]
-                lines.append(f"      options: {opts}")
+        # rich, shared readback (issue #31): formula refs as prop("Name"),
+        # rollup names resolved, two-way reverse names, descriptions
+        lines.extend(render_full_schema_markdown(collection, client))
     lines.append("")
     rows = collection.get_rows()[:sample_rows] if hasattr(collection, "get_rows") else []
     if rows:
@@ -1653,226 +1644,32 @@ _WRITE_ENABLED = _resolve_write_enabled()
 
 
 def _validate_block_specs(block_specs, type_map: dict) -> list[str]:
-    """Up-front spec validation (issue #24): reject malformed input before
-    any write so input errors keep the batch all-or-nothing.
-
-    Returns a list of error messages (empty = valid).
-    """
-    errors: list[str] = []
-    if not isinstance(block_specs, list):
-        errors.append(
-            f"blocks must be a JSON array of objects, got {type(block_specs).__name__}"
-        )
-        return errors
-    known = set(type_map) if type_map else None
-    for i, spec in enumerate(block_specs):
-        where = f"block {i + 1}"
-        if not isinstance(spec, dict):
-            errors.append(f"{where}: expected an object, got {type(spec).__name__}")
-            continue
-        btype = spec.get("type", "text")
-        if not isinstance(btype, str):
-            errors.append(
-                f"{where}: 'type' must be a string, got {type(btype).__name__}"
-            )
-            continue
-        if known is not None and btype not in known:
-            errors.append(f"{where}: unknown type '{btype}'")
-        text = spec.get("text", "")
-        if not isinstance(text, str):
-            errors.append(f"{where}: 'text' must be a string, got {type(text).__name__}")
-        checked = spec.get("checked")
-        if checked is not None and not isinstance(checked, bool):
-            errors.append(
-                f"{where}: 'checked' must be a boolean, got {type(checked).__name__}"
-            )
-        icon = spec.get("icon")
-        if icon is not None and not isinstance(icon, str):
-            errors.append(f"{where}: 'icon' must be a string, got {type(icon).__name__}")
-        language = spec.get("language")
-        if language is not None and not isinstance(language, str):
-            errors.append(
-                f"{where}: 'language' must be a string, got {type(language).__name__}"
-            )
-    return errors
+    """Deprecated alias — moved to unpy.blocks.validate_block_specs (#32)."""
+    return validate_block_specs(block_specs, type_map)
 
 
 def _batch_denominator(specs, failures: list) -> int:
-    """Denominator for the issue-#19 'Added X of N' reports (issue #26): the
-    batch size — not the number of failure messages, which shrinks to the
-    invalid-spec count when up-front validation rejects the whole batch.
-    For a non-list `blocks` payload there is no meaningful batch size, so
-    fall back to the failure-message count."""
-    return len(specs) if isinstance(specs, list) else len(failures)
+    """Deprecated alias — moved to unpy.blocks.batch_denominator (#32)."""
+    return batch_denominator(specs, failures)
 
 
 def _add_blocks_from_specs_core(parent, block_specs: list, type_map: dict):
-    """Create child blocks from [{type, text, checked?, icon?, language?}] specs.
-
-    Returns (count_added, failures) — one spec's failure does not abort the
-    batch; partial success is reported so clients can retry only the
-    remainder (issue #19). Used by append_blocks and create_page.
-
-    v2: all specs are buffered inside ONE batched transaction (flushed in
-    chunks of UNPY_BATCH_MAX_OPS ops) so N blocks cost ~N/100 HTTP calls
-    instead of N. A failing chunk raises; failures from earlier v1 behavior
-    (per-block rollback) still apply inside each chunk since each spec's
-    create+props are atomic within the buffered transaction.
-    """
-    from unpy.config import legacy_mode
-
-    # issue #24: validate every spec up front — one bad spec must not
-    # abort the batch with blocks already written
-    validation_errors = _validate_block_specs(block_specs, type_map)
-    if validation_errors:
-        return 0, validation_errors
-
-    count = 0
-    failures = []
-    from unpy.block import TextBlock
-
-    specs = list(enumerate(block_specs))
-    if legacy_mode() or len(specs) <= 1:
-        # v1 path: one atomic tx per block (also the only sensible path for
-        # a single block — no batching gain, but preserves failure isolation)
-        for idx, spec in specs:
-            btype = spec.get("type", "text")
-            text = spec.get("text", "")
-            cls = type_map.get(btype, TextBlock) if type_map else TextBlock
-            kwargs = {"title": text}
-            if btype == "todo" and "checked" in spec:
-                kwargs["checked"] = spec["checked"]
-            if btype == "callout" and "icon" in spec:
-                kwargs["icon"] = spec["icon"]
-            if btype == "code" and spec.get("language"):
-                kwargs["language"] = spec["language"]
-            try:
-                parent.children.add_new(cls, **kwargs)
-                count += 1
-            except Exception as exc:
-                detail = str(exc)
-                resp = getattr(exc, "response", None)
-                if resp is not None:
-                    try:
-                        body = resp.json()
-                        detail = body.get("debugMessage") or detail
-                    except Exception:
-                        pass
-                failures.append(f"block {idx + 1} ({btype}) failed: {detail}")
-        return count, failures
-
-    client = getattr(parent, "_client", None)
-    if client is None or not hasattr(client, "batched_transaction"):
-        # stub parents in tests (no client) — keep the v1 loop
-        for idx, spec in specs:
-            btype = spec.get("type", "text")
-            text = spec.get("text", "")
-            cls = type_map.get(btype, TextBlock) if type_map else TextBlock
-            kwargs = {"title": text}
-            if btype == "todo" and "checked" in spec:
-                kwargs["checked"] = spec["checked"]
-            if btype == "callout" and "icon" in spec:
-                kwargs["icon"] = spec["icon"]
-            if btype == "code" and spec.get("language"):
-                kwargs["language"] = spec["language"]
-            try:
-                parent.children.add_new(cls, **kwargs)
-                count += 1
-            except Exception as exc:
-                detail = str(exc)
-                resp = getattr(exc, "response", None)
-                if resp is not None:
-                    try:
-                        body = resp.json()
-                        detail = body.get("debugMessage") or detail
-                    except Exception:
-                        pass
-                failures.append(f"block {idx + 1} ({btype}) failed: {detail}")
-        return count, failures
-    committed = 0
-    with client.batched_transaction():
-        for idx, spec in specs:
-            btype = spec.get("type", "text")
-            text = spec.get("text", "")
-            cls = type_map.get(btype, TextBlock) if type_map else TextBlock
-            kwargs = {"title": text}
-            if btype == "todo" and "checked" in spec:
-                kwargs["checked"] = spec["checked"]
-            if btype == "callout" and "icon" in spec:
-                kwargs["icon"] = spec["icon"]
-            if btype == "code" and spec.get("language"):
-                kwargs["language"] = spec["language"]
-            try:
-                parent.children.add_new(cls, **kwargs)
-                count += 1
-            except HTTPError as exc:
-                # server rejected a property write inside the buffered tx:
-                # in batched mode the enclosing chunk fails as a unit — roll
-                # progress back to the last committed chunk boundary and
-                # report remaining specs as failures (matches v1 semantics:
-                # client can retry the remainder).
-                detail = _http_error_detail(exc)
-                for j in range(idx, len(specs)):
-                    failures.append(
-                        f"block {j + 1} ({specs[j][1].get('type', 'text')}) failed: {detail}"
-                    )
-                return committed, failures
-            except Exception as exc:
-                detail = str(exc)
-                resp = getattr(exc, "response", None)
-                if resp is not None:
-                    try:
-                        body = resp.json()
-                        detail = body.get("debugMessage") or detail
-                    except Exception:
-                        pass
-                failures.append(
-                    f"block {idx + 1} ({btype}) failed: {detail}"
-                )
-    return count, failures
+    """Deprecated alias — moved to unpy.blocks.add_blocks_from_specs_core (#32)."""
+    return add_blocks_from_specs_core(parent, block_specs, type_map)
 
 
 def _http_error_detail(exc) -> str:
-    detail = str(exc)
-    resp = getattr(exc, "response", None)
-    if resp is not None:
-        try:
-            body = resp.json()
-            detail = body.get("debugMessage") or detail
-        except Exception:
-            pass
-    return detail
+    """Deprecated alias — moved to unpy.blocks._http_error_detail (#32)."""
+    from unpy.blocks import _http_error_detail as _fn
+
+    return _fn(exc)
 
 
 def _add_single_block_spec(parent, spec: dict, type_map: dict) -> str | None:
-    """Create one block from a spec; return None on success, error on failure."""
-    from unpy.block import TextBlock
+    """Deprecated alias — moved to unpy.blocks._add_single_block_spec (#32)."""
+    from unpy.blocks import _add_single_block_spec as _fn
 
-    btype = spec.get("type", "text")
-    text = spec.get("text", "")
-    cls = type_map.get(btype, TextBlock) if type_map else TextBlock
-    kwargs = {"title": text}
-    if btype == "todo" and "checked" in spec:
-        kwargs["checked"] = spec["checked"]
-    if btype == "callout" and "icon" in spec:
-        kwargs["icon"] = spec["icon"]
-    if btype == "code" and spec.get("language"):
-        kwargs["language"] = spec["language"]
-    try:
-        parent.children.add_new(cls, **kwargs)
-        return None
-    except Exception as exc:
-        detail = str(exc)
-        # requests HTTPError from v1.2.3+ embeds the server's
-        # debugMessage — surface it instead of swallowing detail
-        resp = getattr(exc, "response", None)
-        if resp is not None:
-            try:
-                body = resp.json()
-                detail = body.get("debugMessage") or detail
-            except Exception:
-                pass
-        return f"block ({btype}) failed: {detail}"
+    return _fn(parent, spec, type_map)
 
 
 def _embed_type_map() -> dict:
@@ -1902,78 +1699,10 @@ def _embed_type_map() -> dict:
 
 
 def _import_csv_impl(client, parent, file_path: str, title: str = "") -> str:
-    """Shared CSV→inline-database import (used by MCP tool and CLI)."""
-    from unpy.config import legacy_mode
+    """Deprecated alias — moved to unpy.csv_import.import_csv_impl (issue #32)."""
+    from unpy.csv_import import import_csv_impl
 
-    import csv as csv_mod
-    import os
-
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"File not found: {file_path}")
-    with open(file_path, newline="", encoding="utf-8") as f:
-        reader = csv_mod.reader(f)
-        headers = next(reader)
-        rows_data = list(reader)
-    if not headers:
-        raise ValueError("CSV file has no headers")
-    if not title:
-        title = os.path.basename(file_path).rsplit(".", 1)[0]
-
-    schema = {}
-    title_prop_id = None
-    for i, h in enumerate(headers):
-        if title_prop_id is None:
-            # title prop must have id "title" or Notion adds a phantom one (issue #6)
-            schema["title"] = {"name": h, "type": "title"}
-            title_prop_id = "title"
-        else:
-            schema[f"col{i:04x}"] = {"name": h, "type": "text"}
-    if title_prop_id is None:
-        schema["title"] = {"name": "Name", "type": "title"}
-        title_prop_id = "title"
-
-    cvb = parent.children.add_new(CollectionViewBlock)
-    collection_id = client.create_record("collection", parent=cvb, schema=schema)
-    cvb.collection = client.get_collection(collection_id)
-    cvb.title = title
-    cvb.views.add_new(view_type="table")
-
-    from unpy.utils import slugify
-
-    title_slug = slugify(schema[title_prop_id]["name"])
-    v2_batch = not legacy_mode() and len(rows_data) > 1
-    if v2_batch:
-        # v2: buffer ALL row creates + property writes + page_sort updates
-        # into one batched transaction (flushed in capped chunks) — a 10k-row
-        # CSV costs ~ceil(10k ops / cap) HTTP calls instead of ~10k+.
-        collection = cvb.collection
-        with client.batched_transaction():
-            for row in rows_data:
-                props = {}
-                for i, val in enumerate(row):
-                    if i < len(headers):
-                        if i == 0:
-                            props[title_slug] = val
-                        else:
-                            props[slugify(headers[i])] = val
-                try:
-                    collection.add_row(**props)
-                except Exception:
-                    pass  # Skip rows that fail
-    else:
-        for row in rows_data:
-            props = {}
-            for i, val in enumerate(row):
-                if i < len(headers):
-                    if i == 0:
-                        props[title_slug] = val
-                    else:
-                        props[slugify(headers[i])] = val
-            try:
-                cvb.collection.add_row(**props)
-            except Exception:
-                pass  # Skip rows that fail
-    return cvb.id
+    return import_csv_impl(client, parent, file_path, title)
 
 
 def _resolve_collection_for_write(client, database_id):
@@ -2005,255 +1734,69 @@ def _resolve_collection_for_write(client, database_id):
 
 
 def _find_column(schema: dict, identifier: str):
-    """Find a property in a schema dict by property id or name.
-
-    Returns (prop_id, prop) or (None, None).
-    """
-    ident = (identifier or "").strip()
-    if ident in schema:
-        return ident, schema[ident]
-    ident_lower = ident.lower()
-    for pid, prop in schema.items():
-        if prop is None or prop.get("alive") is False:
-            continue  # tombstoned (deleted) property
-        if (prop.get("name") or "").strip().lower() == ident_lower:
-            return pid, prop
-    return None, None
+    """Deprecated alias — moved to unpy.schema.find_column (#32)."""
+    return find_column(schema, identifier)
 
 
 def _build_select_options(values: list) -> list:
-    """Build select/multi_select/status option dicts.
+    """Deprecated alias — moved to unpy.schema.build_select_options (issue #32)."""
+    return build_select_options(values)
 
-    Notion identifies options by id; without one the UI cannot edit the
-    option's colour (the edit appears to create a new option and revert,
-    issue #15). Values that already carry an id pass through untouched.
+
+def _build_collection_schema(col_specs: list, client=None, parent_space_id: str = "", formula_prop_meta=None):
+    """Deprecated alias — moved to unpy.schema.build_collection_schema (issue #32).
+
+    Kept so tests and the CLI's historical imports keep working. Formula
+    specs are enriched with a name→meta map before delegation (the MCP-side
+    two-pass create_database/add_column build computes it here).
     """
-    import uuid
-
-    out = []
-    for o in values:
-        if isinstance(o, dict):
-            out.append(
-                {**{"id": str(uuid.uuid4()), "color": "default"}, **o}
-                if not o.get("id")
-                else o
-            )
-        else:
-            out.append({"id": str(uuid.uuid4()), "value": o, "color": "default"})
-    return out
+    specs = formula_prop_meta.get("_specs") if isinstance(formula_prop_meta, dict) else None
+    _enrich_formula_specs(col_specs, specs)
+    return _build_collection_schema_shared(col_specs, client, parent_space_id)
 
 
-def _build_collection_schema(col_specs: list, client=None, parent_space_id: str = "") -> dict:
-    """Build a Notion collection schema from column specs.
+def _enrich_formula_specs(col_specs, extra_specs):
+    """Attach "_formula_prop_meta" to every formula spec in col_specs."""
+    from unpy.schema import build_formula_prop_meta
 
-    Each spec: {"name": str, "type": str, "options": [str, ...]}
-    Relation specs additionally accept:
-        "target_database_id": URL/ID of the related database (required),
-        "limit": 1 caps the relation at one linked row,
-        "reverse_name": creates a two-way synced property on the target
-            database (written via a forward+reverse schema transaction; see
-            create_database).
-    Formula specs accept "expression" (Notion formula2 source).
-    Rollup specs accept "relation_property" (name), "target_property" (name),
-        and optional "aggregation" (count, show_unique, sum, percent_checked,
-        earliest_date...). "show_original" is accepted and stored the way
-        the Notion UI does (no aggregation field).
-    Returns: {prop_id: {"name": str, "type": str, ...}}
-    """
-    import uuid
-    schema = {}
+    own_pointer = None
     for spec in col_specs:
-        name = spec.get("name", "Untitled")
-        ptype = spec.get("type", "text")
-        # The first title column MUST get prop id "title" — Notion requires a
-        # property with that id in every collection; when it's missing the
-        # server silently adds its own "Name" title prop, producing two title
-        # columns (issue #6).
-        if ptype == "title":
-            if "title" in schema:
-                raise ValueError(
-                    f"Column '{name}': a database can have only one title "
-                    f"column ('{schema['title']['name']}' is already the title)"
-                )
-            prop_id = "title"
-        else:
-            prop_id = spec.get("id") or uuid.uuid4().hex[:4]
-        # stamp so a later pass reuses the same id (two-pass rollup build)
-        spec["id"] = prop_id
-        prop = {"name": name, "type": ptype}
-        if ptype in ("select", "multi_select", "status") and spec.get("options"):
-            prop["options"] = _build_select_options(spec["options"])
-        if ptype == "relation":
-            rel = _build_relation_prop(spec, client, parent_space_id)
-            if rel.get("property") and not spec.get("_reverse_prop_id"):
-                spec["_reverse_prop_id"] = rel["property"]
-            prop.update(rel)
-        elif ptype == "formula":
-            expr = spec.get("expression", "")
-            if not expr:
-                raise ValueError(
-                    f"Column '{name}': formula columns need an 'expression'"
-                )
-            # Build name → {property, collection} metas so the Notion UI can
-            # resolve refs (it needs ids; the client-side evaluator accepts
-            # name-only).
-            own_pointer = spec.get("_own_pointer") or {}
-            own_schema = spec.get("_own_schema") or schema
-            prop_meta = {}
-            for other in col_specs:
-                if other is spec:
-                    continue
-                other_name = other.get("name", "")
-                other_id = other.get("id")
-                if not (other_name and other_id):
-                    continue
-                meta = {"property": other_id}
-                if other.get("type") == "relation":
-                    tgt = other.get("collection_id") or (
-                        other.get("collection_pointer") or {}
-                    ).get("id")
-                    meta["collection"] = {
-                        "id": _resolve_collection_id(client, tgt) if tgt else "",
-                        "table": "collection",
-                        "spaceId": spec.get("_space_id", ""),
-                    }
-                else:
-                    meta["collection"] = own_pointer
-                prop_meta[other_name] = meta
-            prop["version"] = "v2"
-            prop["formula2"] = {
-                "code": _fev.encode_expr(expr, prop_meta),
-                "result_type": {"type": "text"},
-            }
-        elif ptype == "rollup":
-            prop.update(_build_rollup_prop(spec, client))
-        schema[prop_id] = prop
-    return schema
+        if spec.get("type") == "formula":
+            if own_pointer is None:
+                own_pointer = spec.get("_own_pointer") or {}
+            prop_meta = build_formula_prop_meta(
+                spec.get("_own_schema") or {}, own_pointer, extra_specs or col_specs
+            )
+            # own (formula-less) entries must not shadow same-name extras
+            spec["_formula_prop_meta"] = prop_meta
+    return col_specs
 
 
 def _resolve_collection_id(client, ref: str) -> str:
-    """Resolve a database URL/ID to a collection ID (tolerates short ids)."""
-    from unpy.utils import extract_id
-
-    raw = (ref or "").strip()
-    if not raw:
-        return ""
-    try:
-        raw = extract_id(raw)
-    except Exception:
-        pass  # keep raw as-is; caller may pass a short/partial id
-    block = client.get_block(raw) if client else None
-    if block is not None:
-        coll = getattr(block, "collection", None)
-        if coll is not None:
-            return coll.id
-    return raw
+    """Deprecated alias — moved to unpy.schema.resolve_collection_id (#32)."""
+    return resolve_collection_id(client, ref)
 
 
 def _build_relation_prop(spec: dict, client, parent_space_id: str) -> dict:
-    """Build the schema fragment for a relation property.
-
-    If "reverse_name" is set, returns a fragment carrying the symmetric
-    two-way shape observed in Notion's own client: the forward prop holds
-    "property": <reverse_prop_id> and "version": "v2". The caller is
-    responsible for writing the matching reverse property into the target
-    collection's schema (see _apply_reverse_relation).
-    """
-    target_ref = spec.get("target_database_id", "")
-    if not target_ref:
-        raise ValueError(
-            f"Column '{spec.get('name', '?')}': relation columns need "
-            "'target_database_id' (URL or ID of the related database)"
-        )
-    target_id = _resolve_collection_id(client, target_ref)
-    space_id = parent_space_id or (
-        client.current_space.id if client and client.current_space else ""
-    )
-    import uuid
-    prop = {
-        "collection_id": target_id,
-        "collection_pointer": {
-            "id": target_id,
-            "table": "collection",
-            "spaceId": space_id,
-        },
-    }
-    if spec.get("limit") == 1:
-        prop["limit"] = 1
-    reverse_name = spec.get("reverse_name")
-    if reverse_name:
-        # Notion's UI always writes autoRelate disabled; two-way sync is
-        # achieved by a real property on the other collection, not autoRelate.
-        prop["version"] = "v2"
-        prop["property"] = spec.get("_reverse_prop_id") or uuid.uuid4().hex[:4]
-    prop["autoRelate"] = {"enabled": False}
-    return prop
+    """Deprecated alias — moved to unpy.schema.build_relation_prop (#32)."""
+    return build_relation_prop(spec, client, parent_space_id)
 
 
 def _build_rollup_prop(spec: dict, client) -> dict:
-    """Build the schema fragment for a rollup property.
-
-    Needs the relation property (by name) on THIS database and the target
-    property (by name) on the related database.
-    """
-    rel_name = spec.get("relation_property", "")
-    target_name = spec.get("target_property", "")
-    if not (rel_name and target_name):
-        raise ValueError(
-            f"Column '{spec.get('name', '?')}': rollup columns need "
-            "'relation_property' and 'target_property' names"
-        )
-    own_schema = spec.get("_own_schema") or {}
-    rel_pid = _find_prop_id(own_schema, rel_name)
-    if not rel_pid:
-        raise ValueError(
-            f"rollup '{spec.get('name', '?')}': relation property "
-            f"'{rel_name}' not found in this database"
-        )
-    rel_prop = own_schema.get(rel_pid, {})
-    target_col_id = rel_prop.get("collection_id") or (
-        rel_prop.get("collection_pointer") or {}
-    ).get("id", "")
-    target_schema = _fetch_schema(client, target_col_id)
-    tgt_pid = _find_prop_id(target_schema, target_name)
-    if not tgt_pid:
-        raise ValueError(
-            f"rollup '{spec.get('name', '?')}': target property "
-            f"'{target_name}' not found in related database"
-        )
-    prop = {
-        "version": "v2",
-        "rollup_type": rel_prop.get("type", "relation"),
-        "target_property": tgt_pid,
-        "relation_property": rel_pid,
-        "target_property_type": target_schema.get(tgt_pid, {}).get("type", "text"),
-    }
-    agg = spec.get("aggregation")
-    # "show_original" is how the UI spells "no aggregation" — the schema
-    # stores it by OMITTING the field entirely. Writing the literal string
-    # breaks every Notion client that opens the database (issue #14).
-    if agg and agg not in ("show_original", "original"):
-        prop["aggregation"] = agg
-    return prop
+    """Deprecated alias — moved to unpy.schema.build_rollup_prop (#32)."""
+    # pass this module's _fetch_schema so tests patching srv._fetch_schema
+    # keep controlling the schema source
+    return build_rollup_prop(spec, client, fetch=_fetch_schema)
 
 
 def _find_prop_id(schema: dict, name: str) -> str:
-    from unpy.utils import slugify as _slug
-    want = _slug(name).lower()
-    for pid, p in schema.items():
-        if _slug(p.get("name", "")).lower() == want:
-            return pid
-    return ""
+    """Deprecated alias — moved to unpy.schema.find_prop_id (#32)."""
+    return find_prop_id(schema, name)
 
 
 def _fetch_schema(client, col_id: str) -> dict:
-    if not col_id or client is None:
-        return {}
-    try:
-        coll = client.get_collection(col_id)
-        return coll.get("schema") or {}
-    except Exception:
-        return {}
+    """Deprecated alias — moved to unpy.schema.fetch_schema (#32)."""
+    return fetch_schema(client, col_id)
 
 
 @mcp.tool()
@@ -2681,7 +2224,8 @@ if _WRITE_ENABLED:
                     spec["_own_schema"] = schema
                     spec["_own_pointer"] = own_pointer
                     spec["_space_id"] = space_id
-            schema = _build_collection_schema(col_specs, client, space_id)
+            _enrich_formula_specs(col_specs, col_specs)
+            schema = _build_collection_schema_shared(col_specs, client, space_id)
             # patch own-collection pointer into formula fpp metas now that we
             # know the real collection id (created by create_record below —
             # schema dict is built BEFORE the collection exists, so fpp metas
@@ -2785,145 +2329,20 @@ if _WRITE_ENABLED:
         Returns:
             Confirmation message with the new column's property ID.
         """
-        import uuid
+        from unpy.schema import add_column_prop, resolve_collection_for_write
+
         client = _get_client()
 
         # Get the collection
-        block = client.get_block(database_id)
-        collection = None
-        if block is not None:
-            collection = getattr(block, "collection", None)
-        if collection is None:
-            try:
-                collection = client.get_collection(database_id)
-            except Exception:
-                pass
-        if collection is None:
-            return f"Database not found: {database_id}"
+        collection = resolve_collection_for_write(client, database_id)
+        if isinstance(collection, str):
+            return collection
 
-        # Build the new property. A second title column is invalid in Notion —
-        # every collection already has one — so refuse a title here rather
-        # than create a broken schema (issue #6).
-        if type == "title":
-            return (
-                "Error: cannot add a title column — every database already has "
-                "exactly one (rename the existing title column instead)."
-            )
-        prop_id = uuid.uuid4().hex[:4]
-        prop = {"name": name, "type": type}
-        if type in ("select", "multi_select", "status") and options:
-            opts = json.loads(options)
-            prop["options"] = _build_select_options(opts)
-        if type in ("relation", "formula", "rollup"):
-            # options doubles as the spec JSON for advanced column types
-            spec = json.loads(options) if options else {}
-            spec.setdefault("name", name)
-            spec["type"] = type
-            space_id = client.current_space.id if client.current_space else ""
-            if type == "relation":
-                prop.update(_build_relation_prop(spec, client, space_id))
-                # remember where the forward prop will land so the reverse
-                # property can reference it back
-                spec["id"] = prop_id
-                spec["_reverse_prop_id"] = prop.get("property")
-            elif type == "formula":
-                expr = spec.get("expression", "")
-                if not expr:
-                    return "formula columns need an options JSON with 'expression'"
-                own_schema = collection.get("schema") or {}
-                coll_ptr_id = (
-                    collection.get("parent_id")
-                    or getattr(collection, "id", "")
-                )
-                space_id = client.current_space.id if client.current_space else ""
-                own_pointer = {
-                    "id": getattr(collection, "id", ""),
-                    "table": "collection",
-                    "spaceId": space_id,
-                }
-                prop_meta = {}
-                for pid2, p2 in own_schema.items():
-                    meta = {"property": pid2}
-                    if p2.get("type") == "relation":
-                        tgt = p2.get("collection_id") or (
-                            p2.get("collection_pointer") or {}
-                        ).get("id")
-                        meta["collection"] = {
-                            "id": tgt,
-                            "table": "collection",
-                            "spaceId": space_id,
-                        }
-                    else:
-                        meta["collection"] = own_pointer
-                    prop_meta[p2.get("name", "")] = meta
-                prop["version"] = "v2"
-                prop["formula2"] = {
-                    "code": _fev.encode_expr(expr, prop_meta),
-                    "result_type": {"type": "text"},
-                }
-            elif type == "rollup":
-                spec["_own_schema"] = collection.get("schema") or {}
-                try:
-                    prop.update(_build_rollup_prop(spec, client))
-                except ValueError as exc:
-                    return f"Cannot add rollup column: {exc}"
-
-        # Build the write. IMPORTANT: a forward relation prop carrying
-        # "property": <reverse_pid> is REJECTED (400) unless the reverse
-        # property is written in the SAME transaction — Notion validates the
-        # back-reference. So two-way relations must submit both ops together.
-        from unpy.operations import build_collection_schema_update
-        current_schema = collection.get("schema") or {}
-        current_schema[prop_id] = prop
-
-        if type == "relation" and prop.get("property"):
-            target_id = prop.get("collection_id", "")
-            own_coll_id = collection.id
-            reverse_prop = {
-                "name": spec.get("reverse_name") or name,
-                "type": "relation",
-                "collection_id": own_coll_id,
-                "collection_pointer": {
-                    "id": own_coll_id,
-                    "table": "collection",
-                    "spaceId": space_id,
-                },
-                "property": prop_id,
-                "version": "v2",
-                "autoRelate": {"enabled": False},
-            }
-            if target_id and target_id != own_coll_id:
-                target_coll = client.get_collection(target_id)
-                if target_coll is None:
-                    raise ValueError(
-                        f"Relation target database '{target_id}' not found — "
-                        "cannot create reverse property"
-                    )
-                client.submit_transaction([
-                    build_collection_schema_update(own_coll_id, prop_id, prop),
-                    build_collection_schema_update(
-                        target_id, prop["property"], reverse_prop
-                    ),
-                ])
-                return (
-                    f"Added column '{name}' (type: relation, id: {prop_id}) "
-                    f"with reverse '{reverse_prop['name']}' "
-                    f"(id: {prop['property']}) on the target database"
-                )
-            else:
-                # self-referencing: one prop serves both directions — point
-                # it at itself, like Notion's own self-referencing relations
-                prop["property"] = prop_id
-                current_schema[prop_id] = prop
-                client.submit_transaction([
-                    build_collection_schema_update(own_coll_id, prop_id, prop)
-                ])
-        else:
-            client.submit_transaction([
-                build_collection_schema_update(collection.id, prop_id, prop)
-            ])
-
-        return f"Added column '{name}' (type: {type}, id: {prop_id}) to database"
+        try:
+            msg, _pid = add_column_prop(client, collection, name, type, options)
+        except ValueError as exc:
+            return f"Cannot add column: {exc}"
+        return msg
 
     @mcp.tool()
     def rename_column(
@@ -2962,6 +2381,242 @@ if _WRITE_ENABLED:
             f"Renamed column '{prop.get('name')}' to '{new_name}' "
             f"(id: {prop_id})"
         )
+
+    @mcp.tool()
+    def set_column_description(
+        database_id: str,
+        column: str,
+        description: str,
+    ) -> str:
+        """Set (or clear) a property's description — the help text shown on
+        column hover and in the property edit menu (issue #39).
+
+        Args:
+            database_id: Database URL or ID (or collection id)
+            column: Column name or property id
+            description: The description text (empty string clears it)
+
+        Returns:
+            Confirmation with the property id.
+        """
+        from unpy.schema import resolve_collection_for_write, set_property_description
+
+        client = _get_client()
+        collection = resolve_collection_for_write(client, database_id)
+        if isinstance(collection, str):
+            return collection
+        try:
+            prop_id, _old = set_property_description(client, collection, column, description)
+        except ValueError as exc:
+            return f"Cannot set description: {exc}"
+        display = description or "(cleared)"
+        return f"Description of column '{column}' set (id: {prop_id}): {display}"
+
+    @mcp.tool()
+    def create_view(
+        database_id: str,
+        name: str,
+        type: str = "table",
+        filter: str = "",
+        sort: str = "",
+        group_by: str = "",
+        properties: str = "",
+        date_property: str = "",
+    ) -> str:
+        """Create or update a database view (idempotent by name).
+
+        Args:
+            database_id: Database URL or ID (or collection id)
+            name: View name — an existing view with the same name is
+                updated in place (same view id, same tab position)
+            type: table | board | list | gallery | calendar | timeline
+            filter: JSON, property NAMES: {"property","operator","value"};
+                {"and":[...]}/{"or":[...]} nestable; {"property","raw":{…}}
+                escape hatch. Operators: is, is_not, contains,
+                does_not_contain, starts_with, ends_with, is_empty,
+                is_not_empty, before, after, on_or_before, on_or_after,
+                is_within, greater_than, less_than,
+                greater_than_or_equal_to, less_than_or_equal_to.
+                Shorthand {"property":"Status","is":"Done"} accepted.
+            sort: JSON [{"property","direction"}] or shorthand "Name,-Due".
+            group_by: column name to group by (board writes
+                board_columns_by; other types collection_group_by).
+            properties: visible properties in display order —
+                ["Name","Status"] or [{"property","width"?,"visible"?}].
+                Unlisted properties are written hidden. A table view keeps
+                the title column visible.
+            date_property: date column for calendar/timeline (default:
+                first date column).
+
+        Returns:
+            Confirmation with the view id (created or updated in place).
+        """
+        from unpy.schema import resolve_collection_for_write
+        from unpy.views import build_view_payload, find_view_by_name
+
+        client = _get_client()
+        collection = resolve_collection_for_write(client, database_id)
+        if isinstance(collection, str):
+            return collection
+        existing = find_view_by_name(collection, name)
+        try:
+            payload = build_view_payload(
+                client, collection, type, name,
+                filter_spec=filter, sort_spec=sort, group_by=group_by,
+                properties=properties, date_property=date_property,
+                existing_view=existing,
+            )
+        except ValueError as exc:
+            return str(exc)
+        note = ""
+        for w in payload.get("warnings") or []:
+            note += f" (warning: {w})"
+        if existing is None:
+            block = getattr(collection, "parent", None)
+            view_id = client.create_record(
+                "collection_view",
+                parent=block,
+                type=type,
+                name=name,
+                format=payload.get("format") or {},
+                **({"query2": payload["query2"]} if payload.get("query2") else {}),
+            )
+            ids = block.get("view_ids") or []
+            if view_id not in ids:
+                block.set("view_ids", ids + [view_id])
+            return f"Created view '{name}' ({type}): {view_id}{note}"
+        vid = existing.id
+        ops = [
+            {"table": "collection_view", "id": vid, "path": ["query2"],
+             "command": "update",
+             "args": {"primitiveOp": {"command": "update",
+                                      "args": dict(payload.get("query2") or {})}}}
+            if payload.get("query2")
+            else {"table": "collection_view", "id": vid, "path": ["query2"],
+                  "command": "set", "args": {}},
+        ]
+        if payload.get("format"):
+            ops.append({"table": "collection_view", "id": vid, "path": ["format"],
+                        "command": "update",
+                        "args": {"primitiveOp": {"command": "update",
+                                                 "args": dict(payload["format"])}}})
+        client.submit_transaction(ops)
+        return f"Updated view '{name}' ({type}): {vid}{note}"
+
+    @mcp.tool()
+    def create_template(
+        database_id: str,
+        title: str,
+        properties: str = "",
+        blocks: str = "",
+        icon: str = "",
+        default: bool = False,
+    ) -> str:
+        """Create or update a database template (idempotent by title).
+
+        Templates are the pages under a database's New button — each
+        pre-fills property defaults and a page body for every new row.
+
+        Args:
+            database_id: Database URL or ID (or collection id)
+            title: Template title — an existing template with the same
+                title is updated in place (same template id, menu position)
+            properties: Default values by property NAME:
+                {"Status":"Draft","Priority":"Medium"}. Options are checked
+                strictly against the schema; computed columns (formula,
+                rollup, created/edited) are rejected before any write.
+            blocks: Body JSON (same format as append_blocks); REPLACES the
+                existing body when given.
+            icon: Optional emoji icon
+            default: Make this the collection default for every view.
+
+        Returns:
+            Confirmation with the template id.
+        """
+        from unpy.schema import resolve_collection_for_write
+        from unpy.templates import create_template as _create
+
+        client = _get_client()
+        collection = resolve_collection_for_write(client, database_id)
+        if isinstance(collection, str):
+            return collection
+        try:
+            _row, message = _create(
+                client, collection, title,
+                properties=properties, blocks=blocks, icon=icon, default=default,
+            )
+        except ValueError as exc:
+            return str(exc)
+        return message
+
+    @mcp.tool()
+    def list_templates(database_id: str) -> str:
+        """List a database's templates with property NAMES (readback).
+
+        Args:
+            database_id: Database URL or ID (or collection id)
+
+        Returns:
+            Markdown list: title, default flag, property defaults, icon,
+            body block count.
+        """
+        from unpy.schema import resolve_collection_for_write
+        from unpy.templates import list_templates as _list
+
+        client = _get_client()
+        collection = resolve_collection_for_write(client, database_id)
+        if isinstance(collection, str):
+            return collection
+        templates = _list(collection, client)
+        if not templates:
+            return "(no templates)"
+        lines = []
+        for t in templates:
+            star = " (default)" if t.get("default") else ""
+            lines.append(f"- **{t['title'] or t['id']}**{star}")
+            if t.get("icon"):
+                lines.append(f"    icon: {t['icon']}")
+            for k, v in (t.get("properties") or {}).items():
+                lines.append(f"    {k}: {v}")
+            if t.get("body_blocks"):
+                lines.append(f"    body: {len(t['body_blocks'])} block(s)")
+        return "\n".join(lines)
+
+    @mcp.tool()
+    def list_views(database_id: str) -> str:
+        """List a database's views with property NAMES (provisioning readback).
+
+        Args:
+            database_id: Database URL or ID (or collection id)
+
+        Returns:
+            Markdown list of views (name, type, filter summary, sort,
+            grouping, visible properties).
+        """
+        from unpy.schema import resolve_collection_for_write
+        from unpy.views import list_views as _list_views
+
+        client = _get_client()
+        collection = resolve_collection_for_write(client, database_id)
+        if isinstance(collection, str):
+            return collection
+        views = _list_views(collection, client)
+        if not views:
+            return "(no views)"
+        lines = []
+        for v in views:
+            flags = []
+            if v.get("group_by"):
+                flags.append(f"group by {v['group_by']}")
+            if v.get("date_property"):
+                flags.append(f"date {v['date_property']}")
+            lines.append(f"- **{v['name'] or v['id']}** ({v['type']})"
+                         + (f" — {', '.join(flags)}" if flags else ""))
+            if v.get("sort"):
+                lines.append("    sort: " + ", ".join(
+                    f"{s['property']} ({s['direction']})" for s in v["sort"]))
+            lines.append(f"    visible: {', '.join(v.get('visible_properties') or [])}")
+        return "\n".join(lines)
 
     @mcp.tool()
     def delete_column(
