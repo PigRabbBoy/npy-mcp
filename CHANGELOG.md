@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `get_database` called with a collection / data source id failed with a
+  bare "Error executing tool get_database" (issue #30). `query_database`
+  with the same id worked. `get_block()` returns `None` for a collection
+  id, and the block-id line added for #9 dereferenced `block.id` anyway.
+  The tool now reports the collection's parent block as the block id,
+  read from the record without an extra fetch, or `(unknown)` when the
+  parent isn't a block. Following a relation `target:` from one database
+  to the next now works.
+
 ## [2.1.1] - 2026-10-06
 
 ### Fixed

@@ -1250,6 +1250,15 @@ def list_pages() -> str:
     return "\n".join(lines)
 
 
+def _collection_block_id(collection) -> str:
+    """The database block that holds a collection: its parent, when the
+    parent is a block. Read from the record, no extra fetch."""
+    if collection.get("parent_table") != "block":
+        return ""
+    parent_id = collection.get("parent_id")
+    return parent_id if isinstance(parent_id, str) else ""
+
+
 @mcp.tool()
 def get_database(
     database_id: str,
@@ -1315,8 +1324,11 @@ def get_database(
     lines = [f"# {name}", ""]
     # Own identifiers: the block id callers pass in and the collection
     # ("data source") id that relation targets point at — two different id
-    # spaces, and callers need both (issue #9)
-    lines.append(f"  block id: {block.id}")
+    # spaces, and callers need both (issue #9). Called with a collection id
+    # (e.g. a relation target) there is no block: the database block is the
+    # collection's parent (issue #30).
+    block_id = block.id if block is not None else _collection_block_id(collection)
+    lines.append(f"  block id: {block_id or '(unknown)'}")
     lines.append(f"  data source id: {collection.id}")
     lines.append("")
     lines.append("## Columns")

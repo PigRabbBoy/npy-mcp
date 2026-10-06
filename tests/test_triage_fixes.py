@@ -1033,3 +1033,78 @@ class _FakeQR:
 
     def __iter__(self):
         return iter([])
+
+
+# ---- issue #30: get_database with a collection / data source id ----
+
+
+class _FakeCollection30:
+    """Collection record looked up by its own id (no block in between)."""
+
+    def __init__(self, record):
+        self.id = "coll-abc"
+        self.name = "Features"
+        self._record = record
+
+    def get(self, key, default=None):
+        return self._record.get(key, default)
+
+    def get_schema_properties(self):
+        return [{"id": "title", "slug": "name", "name": "Name", "type": "title"}]
+
+    def get_rows(self, **kwargs):
+        return []
+
+
+class _FakeClient30:
+    """get_block() finds nothing for a collection id; get_collection() does."""
+
+    def __init__(self, collection):
+        self._collection = collection
+
+    def get_block(self, block_id, force_refresh=False):
+        return None
+
+    def get_collection(self, collection_id, force_refresh=False):
+        return self._collection if collection_id == self._collection.id else None
+
+
+class TestIssue30GetDatabaseByCollectionId:
+    """get_database(<collection id>) dereferenced block.id on the None that
+    get_block() returned, so following a relation target failed while
+    query_database with the same id worked."""
+
+    def _get_database(self, record, **kwargs):
+        from unittest.mock import patch
+
+        import unpy_mcp.server as srv
+
+        client = _FakeClient30(_FakeCollection30(record))
+        with patch.object(srv, "_get_client", return_value=client):
+            return srv.get_database("coll-abc", sample_rows=0, **kwargs)
+
+    def test_collection_id_reports_parent_block_id(self):
+        out = self._get_database(
+            {"parent_id": "block-xyz", "parent_table": "block",
+             "schema": {"title": {"name": "Name", "type": "title"}}}
+        )
+        assert "block id: block-xyz" in out
+        assert "data source id: coll-abc" in out
+        assert "**Name** (title)" in out
+
+    def test_collection_id_with_full_schema(self):
+        out = self._get_database(
+            {"parent_id": "block-xyz", "parent_table": "block",
+             "schema": {"title": {"name": "Name", "type": "title"}}},
+            full_schema=True,
+        )
+        assert "## Full schema" in out
+        assert "data source id: coll-abc" in out
+
+    def test_collection_without_block_parent_does_not_crash(self):
+        out = self._get_database(
+            {"parent_id": "space-1", "parent_table": "space",
+             "schema": {"title": {"name": "Name", "type": "title"}}}
+        )
+        assert "block id: (unknown)" in out
+        assert "data source id: coll-abc" in out
