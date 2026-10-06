@@ -173,6 +173,18 @@ def get_database(
     database_id: str = typer.Argument(..., help="Database block URL/ID or collection ID"),
     sample_rows: int = typer.Option(5, "--sample", "-s", help="Number of sample rows to show"),
     format: str = typer.Option("markdown", "--format", "-f", help="markdown | json"),
+    full_schema: bool = typer.Option(
+        False,
+        "--full-schema",
+        help=(
+            "Include every column's full definition: select/status options, "
+            "relation target + synced reverse property, rollup relation/target "
+            "property names + aggregation, formula expression in prop(\"Name\") "
+            "form. With --format json each schema entry gains id and these "
+            "fields; markdown adds the same '## Full schema' section as the MCP "
+            "get_database tool."
+        ),
+    ),
     token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
 ) -> None:
     """Fetch a database schema and sample rows."""
@@ -181,7 +193,11 @@ def get_database(
     if collection is None:
         typer.echo(f"Database not found: {database_id}", err=True)
         raise typer.Exit(1)
-    typer.echo(render_database(collection, sample_rows=sample_rows, format=format))
+    typer.echo(
+        render_database(
+            collection, sample_rows=sample_rows, format=format, full_schema=full_schema
+        )
+    )
 
 
 @app.command(name="query-database")

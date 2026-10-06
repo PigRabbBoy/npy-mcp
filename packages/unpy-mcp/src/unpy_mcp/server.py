@@ -1263,8 +1263,10 @@ def get_database(
         database_id: Database block URL or ID, or collection ID
         sample_rows: Number of sample rows to show (default 5)
         full_schema: If true, include full column definitions (relation
-            targets, rollup configs, formula expressions, select options) —
-            rich enough to diff for idempotent provisioning.
+            targets and synced reverse property, rollup configs with
+            property names, formula expressions in prop("Name") form,
+            select/status options) — rich enough to diff for idempotent
+            provisioning. Same section as `unpy get-database --full-schema`.
         refresh: Force a server refresh before reading (default true).
 
     Returns:
@@ -1329,41 +1331,11 @@ def get_database(
             formula_slugs.add(pslug)
         lines.append(f"  - **{pname}** ({ptype})")
     if full_schema:
+        # shared with `unpy get-database --full-schema` (issue #31)
+        from unpy.schema import describe_schema, full_schema_markdown
+
         lines.append("")
-        lines.append("## Full schema")
-        raw_schema = collection.get("schema") or {}
-        for pid, p in raw_schema.items():
-            if p is None:
-                continue  # tombstoned (deleted) property
-            ptype = p.get("type", "?")
-            lines.append(f"  - **{p.get('name', '?')}** ({ptype}) [id: {pid}]")
-            if ptype == "relation":
-                tgt = p.get("collection_pointer") or {}
-                lines.append(
-                    f"      target: {p.get('collection_id') or tgt.get('id', '?')}"
-                )
-                lines.append(f"      single: {'yes' if p.get('limit') == 1 else 'no'}")
-                ar = p.get("autoRelate") or {}
-                if ar.get("enabled"):
-                    lines.append(f"      reverse_name: {ar.get('name', '')}")
-            elif ptype == "rollup":
-                lines.append(
-                    f"      relation_property: {p.get('relation_property', '?')}"
-                )
-                lines.append(f"      target_property: {p.get('target_property', '?')}")
-                # no aggregation field == "show original" (issue #14 round-trip)
-                lines.append(
-                    f"      aggregation: {p.get('aggregation') or 'show_original'}"
-                )
-            elif ptype == "formula":
-                try:
-                    src, _ = _fev.build_expr(p)
-                    lines.append(f"      expression: {src}")
-                except Exception:
-                    lines.append("      expression: (unparseable)")
-            elif ptype in ("select", "multi_select", "status"):
-                opts = [o.get("value", "") for o in p.get("options") or []]
-                lines.append(f"      options: {opts}")
+        lines.extend(full_schema_markdown(describe_schema(collection)))
     lines.append("")
     rows = collection.get_rows()[:sample_rows] if hasattr(collection, "get_rows") else []
     if rows:

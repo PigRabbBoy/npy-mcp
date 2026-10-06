@@ -1217,23 +1217,21 @@ def _fmt_date(d: _date, fmt: str) -> str:
 
 
 def build_expr(prop_schema: dict):
-    """Flatten formula2.code into (src, refs) with {N} placeholders."""
-    refs: list[dict] = []
+    """Flatten formula2.code into (src, refs) with {N} placeholders.
+
+    The segment walk is shared with unpy.schema.describe_schema, which
+    renders the same refs as prop("Name") for get_database(full_schema).
+    """
+    from unpy.schema import FormulaRef, formula_parts
+
+    refs: list = []
     parts: list[str] = []
-    code = (prop_schema.get("formula2") or {}).get("code") or []
-    for seg in code:
-        if isinstance(seg, list) and seg:
-            if seg[0] == "‣" and len(seg) > 1 and seg[1]:
-                try:
-                    meta = seg[1][0][1]
-                    parts.append("{" + str(len(refs)) + "}")
-                    refs.append(meta)
-                    continue
-                except Exception:
-                    pass
-            parts.append(str(seg[0]))
-        elif isinstance(seg, str):
-            parts.append(seg)
+    for part in formula_parts(prop_schema):
+        if isinstance(part, FormulaRef):
+            parts.append("{" + str(len(refs)) + "}")
+            refs.append(part.meta)
+        else:
+            parts.append(part)
     return "".join(parts), refs
 
 

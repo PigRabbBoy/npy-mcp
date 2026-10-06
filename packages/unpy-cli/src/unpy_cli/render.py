@@ -7,6 +7,7 @@ from typing import Any
 
 from unpy import Block, CollectionRowBlock, NotionClient, notion_to_markdown
 from unpy.render import render_property
+from unpy.schema import describe_schema, full_schema_markdown
 
 
 def _safe_props(row) -> dict:
@@ -84,16 +85,30 @@ def render_rows(rows: list[CollectionRowBlock], format: str = "markdown") -> str
     return "\n---\n".join(lines)
 
 
-def render_database(collection, sample_rows: int = 5, format: str = "markdown") -> str:
-    """Render a database (collection) schema + sample rows."""
+def render_database(
+    collection,
+    sample_rows: int = 5,
+    format: str = "markdown",
+    full_schema: bool = False,
+) -> str:
+    """Render a database (collection) schema + sample rows.
+
+    full_schema adds every column's full definition (unpy.schema, shared
+    with the MCP get_database tool): in JSON each schema entry gains id and
+    per-type fields; in markdown a '## Full schema' section follows Columns.
+    """
     if format == "json":
-        schema = collection.get_schema_properties() if hasattr(collection, "get_schema_properties") else []
+        if full_schema:
+            schema_out = describe_schema(collection)
+        else:
+            schema = collection.get_schema_properties() if hasattr(collection, "get_schema_properties") else []
+            schema_out = [{"name": p.get("name","?"), "type": p.get("type","?")} for p in schema]
         rows = collection.get_rows()[:sample_rows] if hasattr(collection, "get_rows") else []
         data = {
             "name": collection.name if hasattr(collection, "name") else "",
             "block_id": (collection.parent.id if hasattr(collection, "parent") else ""),
             "data_source_id": collection.id if hasattr(collection, "id") else "",
-            "schema": [{"name": p.get("name","?"), "type": p.get("type","?")} for p in schema],
+            "schema": schema_out,
             "sample_rows": [_safe_props(r) for r in rows],
         }
         return json.dumps(data, indent=2, ensure_ascii=False, default=str)
@@ -112,6 +127,9 @@ def render_database(collection, sample_rows: int = 5, format: str = "markdown") 
         pname = prop.get("name", "?")
         ptype = prop.get("type", "?")
         lines.append(f"  - **{pname}** ({ptype})")
+    if full_schema:
+        lines.append("")
+        lines.extend(full_schema_markdown(describe_schema(collection)))
     lines.append("")
     rows = collection.get_rows()[:sample_rows] if hasattr(collection, "get_rows") else []
     if rows:
