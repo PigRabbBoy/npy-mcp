@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.2] - 2026-10-06
+
+### Security
+- Bumped **PyJWT 2.13.0 → 2.15.1** and **urllib3 2.7.0 → 2.8.0** in the lockfile,
+  clearing 15 of 16 open Dependabot alerts (both packages are transitive deps of
+  the `mcp` SDK / `requests`). `unpy-mcp` now declares `pyjwt[crypto]>=2.14.0,
+  urllib3>=2.8.0` and `unpy-core` declares `urllib3>=2.8.0` so fresh installs and
+  the Docker image can't resolve back to vulnerable versions.
+- Remaining alert #16 (PyJWT CVE-2026-103001, options-dict mutation → claim-check
+  bypass on dict reuse) has **no patched release yet** (fixed in none;
+  suggested fix ranges `>= 2.11.0, <= 2.13.0`). Exposure for unpy-mcp is
+  effectively zero: nothing in this project imports `jwt`, and the `mcp` SDK only
+  calls `jwt.encode()` (client-side private_key_jwt extension), never
+  `jwt.decode()`. Will clear automatically once PyJWT ships a fixed version.
+
 ## [2.2.1] - 2026-10-06
 
 ### Fixed

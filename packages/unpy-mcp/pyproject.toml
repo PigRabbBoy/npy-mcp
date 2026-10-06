@@ -1,11 +1,13 @@
 [project]
 name = "unpy-mcp"
-version = "2.2.1"
+version = "2.2.2"
 description = "MCP server for Notion (stdio + HTTP, cookie-based)"
 requires-python = ">=3.12"
 dependencies = [
     "unpy-core",
     "mcp>=1.0",
+    "pyjwt[crypto]>=2.14.0",
+    "urllib3>=2.8.0",
 ]
 
 [project.scripts]

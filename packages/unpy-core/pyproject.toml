@@ -1,10 +1,11 @@
 [project]
 name = "unpy-core"
-version = "2.2.1"
+version = "2.2.2"
 description = "Cookie-based Notion internal API client (core library)"
 requires-python = ">=3.12"
 dependencies = [
     "requests>=2.31",
+    "urllib3>=2.8.0",
     "commonmark>=0.9",
     "bs4",
     "tzlocal",
