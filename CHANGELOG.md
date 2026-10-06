@@ -6,6 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.3] - 2026-10-06
+
+### Fixed
+- **`export --format pdf` of a single page** (issue #42): Notion's `exportURL`
+  for a single-page, non-recursive export serves the file itself (`%PDF` bytes)
+  rather than a zip, so the unconditional `zipfile` unpack crashed with
+  `BadZipFile` and nothing was written. `export_block` now checks the downloaded
+  body with `zipfile.is_zipfile` and, when it's not an archive, writes it as a
+  single file named from the block's title (`<slug>.pdf`/`.html`/`.md`); text
+  formats (markdown/html) still return inline `text`. Real zips keep the
+  streaming path unchanged. Fixes the CLI `unpy export` and the MCP `export`
+  tool (same underlying function).
+
+### Tests
+- 6 new tests in `tests/test_export.py` (bare PDF/HTML/markdown written
+  as-is, zip regression, empty body, title-derived filename); suite 364 passing.
+
 ## [2.2.2] - 2026-10-06
 
 ### Security

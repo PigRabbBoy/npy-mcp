@@ -197,6 +197,48 @@ def write_export_files(files, output_dir):
     return written
 
 
+SINGLE_FILE_EXTENSIONS = {"pdf": ".pdf", "html": ".html", "markdown": ".md"}
+
+
+def _single_file_name(client, block_id, ext):
+    """Filename for a non-zip (single-file) export: the block's title when
+    available, else the block id — e.g. "Doc a.pdf"."""
+    stem = ""
+    try:
+        from .block import Block
+
+        block = Block(client, block_id)
+        raw = block.get(["properties", "title"]) or []
+        stem = "".join(
+            seg[0] for seg in raw
+            if isinstance(seg, list) and seg and isinstance(seg[0], str)
+            and not str(seg[0]).startswith("‣")
+        ).strip()
+    except Exception:
+        stem = ""
+    from .utils import slugify
+
+    stem = slugify(stem or block_id)
+    return stem + ext
+
+
+def _write_single_file_export(content, output_dir, client, block_id, fmt):
+    """A non-zip exportURL response (single page: Notion serves the file
+    itself, e.g. %PDF bytes) is written as-is, never unzipped (issue #42).
+    Returns (written paths, decoded text or None)."""
+    ext = SINGLE_FILE_EXTENSIONS.get(fmt or "", "")
+    target = os.path.join(output_dir, _single_file_name(client, block_id, ext))
+    with open(target, "wb") as f:
+        f.write(content)
+    text = None
+    if fmt in ("markdown", "html"):
+        try:
+            text = content.decode("utf-8")
+        except (UnicodeDecodeError, AttributeError):
+            text = None
+    return [target], text
+
+
 def export_block(
     client,
     block_id,
@@ -249,27 +291,33 @@ def export_block(
 
     output_dir = output_dir or os.getcwd()
     os.makedirs(output_dir, exist_ok=True)
-    # v2: stream entry-by-entry to disk (RAM stays flat even for huge zips);
-    # UNPY_LEGACY=1 keeps the v1 in-memory unpack
-    from .config import legacy_mode
-
-    text = None
-    if legacy_mode():
-        files, single = unpack_export_zip(zip_response.content)
-        written = write_export_files(files, output_dir)
-        if single is not None:
-            try:
-                text = single.decode("utf-8")
-            except UnicodeDecodeError:
-                pass
+    body = zip_response.content
+    if not zipfile.is_zipfile(io.BytesIO(body)):
+        # single-file export: Notion serves the file itself (e.g. one page
+        # as PDF) instead of a zip — write it as-is (issue #42)
+        written, text = _write_single_file_export(body, output_dir, client, block_id, format)
     else:
-        written, _ = stream_export_zip_to_files(zip_response.content, output_dir)
-        if len(written) == 1:
-            try:
-                with open(written[0], "rb") as f:
-                    text = f.read().decode("utf-8")
-            except (UnicodeDecodeError, OSError):
-                text = None
+        # v2: stream entry-by-entry to disk (RAM stays flat even for huge
+        # zips); UNPY_LEGACY=1 keeps the v1 in-memory unpack
+        from .config import legacy_mode
+
+        text = None
+        if legacy_mode():
+            files, single = unpack_export_zip(body)
+            written = write_export_files(files, output_dir)
+            if single is not None:
+                try:
+                    text = single.decode("utf-8")
+                except UnicodeDecodeError:
+                    pass
+        else:
+            written, _ = stream_export_zip_to_files(body, output_dir)
+            if len(written) == 1:
+                try:
+                    with open(written[0], "rb") as f:
+                        text = f.read().decode("utf-8")
+                except (UnicodeDecodeError, OSError):
+                    text = None
 
     result = {"files": written, "output_dir": output_dir}
     if text is not None:

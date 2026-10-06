@@ -1142,7 +1142,7 @@ wheels = [
 
 [[package]]
 name = "unpy"
-version = "2.2.2"
+version = "2.2.3"
 source = { virtual = "." }
 
 [package.optional-dependencies]
@@ -1168,7 +1168,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "unpy-cli"
-version = "2.2.2"
+version = "2.2.3"
 source = { editable = "packages/unpy-cli" }
 dependencies = [
     { name = "rich" },
@@ -1185,7 +1185,7 @@ requires-dist = [
 
 [[package]]
 name = "unpy-core"
-version = "2.2.2"
+version = "2.2.3"
 source = { editable = "packages/unpy-core" }
 dependencies = [
     { name = "bs4" },
@@ -1212,7 +1212,7 @@ requires-dist = [
 
 [[package]]
 name = "unpy-mcp"
-version = "2.2.2"
+version = "2.2.3"
 source = { editable = "packages/unpy-mcp" }
 dependencies = [
     { name = "mcp" },

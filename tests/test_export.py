@@ -255,3 +255,199 @@ class TestExportBlockFlow:
 
         with pytest.raises(ExportError, match="Current Space"):
             export_block(FakeClient(), str(uuid4()))
+
+
+# ---- issue #42: single-page PDF export is a bare file, not a zip -------------
+
+
+class TestIssue42SingleFileExport:
+    """For a single-page non-recursive export, Notion's exportURL serves the
+    file itself (e.g. %PDF bytes) instead of a zip — writing it as-is, not
+    unzipping, is required."""
+
+    def _client(self, body, content_type="application/pdf"):
+        posts = []
+
+        class FakeResponse:
+            def json(self):
+                return {"taskId": "t1"}
+
+        class FakeSession:
+            headers = {}
+
+            def get(self, url, timeout=None):
+                class R:
+                    content = body
+                    headers = {"content-type": content_type}
+
+                    def raise_for_status(self):
+                        pass
+
+                return R()
+
+        class FakeSpace:
+            id = "spc"
+
+        class FakeClient:
+            session = FakeSession()
+            current_space = FakeSpace()
+            _store = {"block": {}, "collection": {}}
+
+            def post(self, endpoint, data):
+                posts.append(endpoint)
+                if endpoint == "enqueueTask":
+                    return FakeResponse()
+                body_tasks = {
+                    "results": [
+                        {
+                            "state": "success",
+                            "status": {
+                                "type": "complete",
+                                "exportURL": "https://file.notion.com/f/t/x",
+                            },
+                        }
+                    ]
+                }
+
+                class R:
+                    def json(self):
+                        return body_tasks
+
+                return R()
+
+        return FakeClient(), posts
+
+    def _block_title_store(self):
+        return {
+            "title": [["My Evidence Page"]],
+        }
+
+    def test_bare_pdf_written_as_pdf(self, tmp_path, monkeypatch):
+        from uuid import uuid4
+
+        from unpy.utils import slugify
+
+        pdf = b"%PDF-1.4\n..." + b"x" * 100
+        client, posts = self._client(pdf)
+        tid = str(uuid4())
+        import unpy.export as exp
+
+        def fake_name(cl, bid, ext):
+            return slugify("My Evidence Page") + ext
+
+        monkeypatch.setattr(exp, "_single_file_name", fake_name)
+        monkeypatch.setattr(time, "sleep", lambda s: None)
+        result = exp.export_block(
+            client, tid, format="pdf", output_dir=str(tmp_path), timeout=5
+        )
+        assert len(result["files"]) == 1
+        name = result["files"][0]
+        assert name.endswith(".pdf") and slugify("My Evidence Page") in name
+        assert (tmp_path / (slugify("My Evidence Page") + ".pdf")).read_bytes() == pdf
+        assert result["output_dir"] == str(tmp_path)
+        assert "text" not in result  # PDF is binary — no inline text
+
+    def test_bare_pdf_filename_from_block_title(self, tmp_path, monkeypatch):
+        """_single_file_name reads the real Block title from the client."""
+        from uuid import uuid4
+
+        import unpy.block as block_mod
+        import unpy.export as exp
+
+        pdf = b"%PDF-1.4"
+        client, _ = self._client(pdf)
+        tid = str(uuid4())
+        client._store["block"][tid] = {
+            "id": tid, "type": "page", "alive": True,
+            "properties": {"title": [["My Evidence Page"]]},
+        }
+
+        class FakeBlockClient:
+            _store = client._store
+            _monitor = None
+
+            def get_record_data(self, table, i, **kw):
+                return self._store[table].get(i)
+
+        name = exp._single_file_name(FakeBlockClient(), tid, ".pdf")
+        assert name == slug_of("My Evidence Page") + ".pdf"
+
+    def test_bare_html_written_as_html(self, tmp_path, monkeypatch):
+        from uuid import uuid4
+
+        import unpy.export as exp
+
+        html = b"<html><body>x</body></html>"
+        client, _ = self._client(html, content_type="text/html")
+
+        def fake_name(cl, bid, ext):
+            return "doc-a" + ext
+
+        monkeypatch.setattr(exp, "_single_file_name", fake_name)
+        monkeypatch.setattr(time, "sleep", lambda s: None)
+        result = exp.export_block(
+            client, str(uuid4()), format="html", output_dir=str(tmp_path), timeout=5
+        )
+        assert len(result["files"]) == 1
+        assert result["files"][0].endswith(".html")
+        assert (tmp_path / "doc-a.html").read_bytes() == html
+        assert result["text"] == html.decode("utf-8")  # html is text → inline
+
+    def test_markdown_single_file_export(self, tmp_path, monkeypatch):
+        from uuid import uuid4
+
+        import unpy.export as exp
+
+        md = b"# Page\n\nbody"
+        client, _ = self._client(md, content_type="text/markdown")
+
+        def fake_name(cl, bid, ext):
+            return "page-a" + ext
+
+        monkeypatch.setattr(exp, "_single_file_name", fake_name)
+        monkeypatch.setattr(time, "sleep", lambda s: None)
+        result = exp.export_block(
+            client, str(uuid4()), format="markdown",
+            output_dir=str(tmp_path), timeout=5,
+        )
+        assert (tmp_path / "page-a.md").read_bytes() == md
+        assert result["text"] == "# Page\n\nbody"
+
+    def test_valid_zip_still_unzipped(self, tmp_path, monkeypatch):
+        """Regression: real zips keep the streaming path."""
+        from uuid import uuid4
+
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as z:
+            z.writestr("Doc a.md", b"# Doc")
+        client, _ = self._client(zip_buf.getvalue(), content_type="application/zip")
+        monkeypatch.setattr(time, "sleep", lambda s: None)
+        result = export_block(
+            client, str(uuid4()), output_dir=str(tmp_path), timeout=5
+        )
+        assert (tmp_path / "Doc a.md").read_bytes() == b"# Doc"
+        assert result["text"] == "# Doc"
+
+    def test_empty_body_still_written(self, tmp_path, monkeypatch):
+        """Empty response body must not crash is_zipfile — written as-is."""
+        from uuid import uuid4
+
+        import unpy.export as exp
+
+        client, _ = self._client(b"")
+
+        def fake_name(cl, bid, ext):
+            return "empty" + ext
+
+        monkeypatch.setattr(exp, "_single_file_name", fake_name)
+        monkeypatch.setattr(time, "sleep", lambda s: None)
+        result = exp.export_block(
+            client, str(uuid4()), format="pdf", output_dir=str(tmp_path), timeout=5
+        )
+        assert (tmp_path / "empty.pdf").read_bytes() == b""
+
+
+def slug_of(text):
+    from unpy.utils import slugify
+
+    return slugify(text)
