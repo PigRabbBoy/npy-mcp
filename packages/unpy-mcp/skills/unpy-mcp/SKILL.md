@@ -25,12 +25,17 @@ description: >-
 | Create a new page | `create_page` |
 | Add content blocks to a page | `append_blocks` |
 | Edit a block's text or checkbox | `update_block` |
+| Edit MANY blocks at once | `update_blocks` |
 | Delete a page or block | `delete_block` |
+| Delete MANY blocks at once | `delete_blocks` |
 | Move a block | `move_block` |
 | Add a linked copy of a block | `add_alias` |
 | Add a row to a database | `add_database_row` |
+| Add MANY rows at once | `add_database_rows` |
 | Edit a database row's properties | `update_database_row` |
+| Edit MANY rows at once | `update_database_rows` |
 | Delete a database row | `delete_database_row` |
+| Delete MANY rows at once | `delete_database_rows` |
 | Create a database with typed columns | `create_database` |
 | Add a column to an existing database | `add_column` |
 | Rename a database column | `rename_column` |
@@ -41,8 +46,10 @@ description: >-
 | Import a CSV as a database | `import_csv` |
 | Comment on a page (new thread or reply) | `add_comment` |
 
-**8 read tools** are always available. **19 write tools** require
+**9 read tools** are always available. **23 write tools** require
 `NOTION_ALLOW_WRITE=1` on the server — if they're missing, write is disabled.
+`add_comment` alone can be enabled WITHOUT full write via
+`NOTION_ALLOW_COMMENTS=1` (or `comments = true` in the config file).
 
 ## Common workflows
 
@@ -50,6 +57,8 @@ description: >-
 1. Call `list_pages` to see top-level pages, OR call `search` with a keyword.
 2. Copy the page ID or URL from the result.
 3. Call `get_page` with that ID (`depth=1` for direct children, `depth=2` for deeper).
+   Keep `refresh=true` (default) when edits will follow — it always serves
+   current server state, not a cached snapshot.
 
 ### Create a new page with content
 1. Call `list_pages` or `search` to find the parent page ID.
@@ -59,7 +68,21 @@ description: >-
 ### Work with a database
 1. Call `search` or `list_pages` to find the database ID.
 2. Call `get_database` to see columns + sample rows (understand the schema).
-3. Call `query_database` to list rows, or `add_database_row` to add one.
+3. Call `query_database` to list rows, `add_database_row` to add one —
+   or the batch tools (`add_database_rows` / `update_database_rows` /
+   `delete_database_rows`) for several rows in one call.
+
+### Update MANY todos at once
+1. Call `get_page` to find the todo block IDs.
+2. Call `update_blocks` once with
+   `[{"block_id":"a","checked":true},{"block_id":"b","checked":true}]`
+   (or keep using `update_block` field="checked" for a single todo).
+
+### Clear a page's old content before rewriting
+1. Call `get_page` to list the current child blocks (and their IDs).
+2. Call `delete_blocks` once with ALL the child block IDs (batched —
+   do NOT call `delete_block` in a loop).
+3. Call `append_blocks` with the new content.
 
 ### Update a todo checkbox
 1. Call `get_page` to find the todo block ID.
@@ -81,12 +104,18 @@ description: >-
 
 - **Write tools may be hidden** — if `NOTION_ALLOW_WRITE` is not set, only read
   tools appear. Don't assume write tools are available; check first.
-- **Always confirm before deleting** — ask the user before calling `delete_block`
-  or `delete_database_row`. Use `permanently=false` (soft delete) by default;
-  only use `permanently=true` if the user explicitly asks.
-- **`append_blocks` takes a JSON string** — the `blocks` argument is a JSON array
-  string, not individual arguments. Example:
-  `[{"type":"text","text":"Hello"},{"type":"todo","text":"Task","checked":true}]`
+- **Always confirm before deleting** — ask the user before calling `delete_block`,
+  `delete_blocks`, `delete_database_row`, or `delete_database_rows`. Use
+  `permanently=false` (soft delete) by default; only use `permanently=true`
+  if the user explicitly asks.
+- **Batch tools take JSON strings** — `blocks`, `block_ids`, `updates`, `rows`
+  are JSON array strings, not individual arguments. Examples:
+  - `append_blocks`: `[{"type":"text","text":"Hello"},{"type":"todo","text":"T","checked":true}]`
+  - `delete_blocks`: `["id1","id2"]`
+  - `update_blocks`: `[{"block_id":"id1","text":"New"}]`
+  - `add_database_rows`: `[{"Name":"Row 1"},{"Name":"Row 2"}]`
+- **Batch beats loops** — for N > 1 blocks/rows, prefer the batch tool
+  (1 HTTP call per ~100 ops) over repeating the single-item tool N times.
 - **`add_comment` posts publicly** — anyone with page access sees it. Confirm
   wording with the user if the request is ambiguous.
 

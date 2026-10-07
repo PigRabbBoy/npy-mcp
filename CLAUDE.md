@@ -20,8 +20,8 @@ unpy-mcp/
 ├── pyproject.toml              ← uv workspace root
 ├── packages/
 │   ├── unpy-core/src/unpy/    ← Core library (was `notion/` before the unpy rename)
-│   ├── unpy-cli/src/unpy_cli/ ← CLI (Typer, 25 commands)
-│   └── unpy-mcp/src/unpy_mcp/ ← MCP server (stdio + HTTP, 27 tools)
+│   ├── unpy-cli/src/unpy_cli/ ← CLI (Typer, 37 commands)
+│   └── unpy-mcp/src/unpy_mcp/ ← MCP server (stdio + HTTP, 32 tools)
 ├── tests/                      ← pytest + vcr.py (126 tests)
 ├── docs/adr/                   ← 5 Architecture Decision Records
 ├── CONTEXT.md                  ← Domain glossary
@@ -34,7 +34,7 @@ unpy-mcp/
 # Install (dev)
 uv sync --extra dev
 
-# Run tests (126 tests, no live Notion calls)
+# Run tests (389 tests, no live Notion calls)
 python -m pytest tests/ -v
 
 # Run smoke test (requires live Notion credentials)
@@ -57,6 +57,7 @@ NOTION_MCP_AUTH_TOKEN=secret python -m unpy_mcp --transport http --port 8000
 - `NOTION_TOKEN` — legacy fallback token
 - `NOTION_SPACE_ID` — space to bind as current space
 - `NOTION_ALLOW_WRITE` — set to `1` to enable write commands/tools
+- `NOTION_ALLOW_COMMENTS` — set to `1` to enable comment-only mode (add_comment/add-comment) without full write; `NOTION_ALLOW_WRITE=1` implies it; config file alternative: `comments = true`
 - `NOTION_MCP_AUTH_TOKEN` — Bearer token for MCP HTTP transport
 - `NOTION_MCP_ALLOWED_HOSTS` — comma-separated Host allowlist (e.g. `mcp.example.com:*`)
   that keeps DNS-rebinding protection on for non-loopback HTTP binds; loopback binds
@@ -83,14 +84,14 @@ NOTION_MCP_AUTH_TOKEN=secret python -m unpy_mcp --transport http --port 8000
 
 ### CLI (`unpy-cli`)
 
-- **Typer** framework, 26 commands + 3 auth subcommands.
-- Write commands gated by `NOTION_ALLOW_WRITE=1` env var.
+- **Typer** framework, 37 commands + 3 auth subcommands.
+- Write commands gated by `NOTION_ALLOW_WRITE=1` env var; comment-only mode via `NOTION_ALLOW_COMMENTS=1` (add_comment / add-comment only).
 - Output: Markdown (default) or JSON (`--format json`).
 
 ### MCP Server (`unpy-mcp`)
 
 - **MCP Python SDK v2** (`MCPServer` + decorator pattern).
-- 27 tools (8 read + 19 write), write tools gated by `NOTION_ALLOW_WRITE=1`.
+- 32 tools (9 read + 23 write), write tools gated by `NOTION_ALLOW_WRITE=1`.
 - Two transports: `stdio` (local, default) and `streamable-http` (remote).
 - HTTP transport supports Bearer token auth via `NOTION_MCP_AUTH_TOKEN`.
 
@@ -114,12 +115,17 @@ NotionClient (client.py)
 
 ## Testing
 
-- **57 tests** in `tests/`:
-  - `test_markdown.py` (21) — markdown ↔ notion conversion
-  - `test_auth.py` (17) — token/space resolution logic
-  - `test_operations.py` (6) — operation builder
-  - `test_client.py` (8) — integration via vcr.py recordings
+- **389 tests** in `tests/` (full suite: `python -m pytest tests/ -q`):
+  - `test_markdown.py` — markdown ↔ notion conversion
+  - `test_auth.py` — token/space resolution logic
+  - `test_operations.py` — operation builder
+  - `test_client.py` — integration via vcr.py recordings
   - `test_mcp_server.py` (5) — MCP tool registration + schemas
+  - `test_perf_*.py` — batching (M1), fan-out, TTL cache, store
+  - `test_issue43.py` / `test_issue43_rows.py` — forced-refresh TTL bypass +
+    batch deletion/edits/rows (v2.2.4)
+  - `test_*_security.py` / `test_*_hardening.py` — cookie scope, transport,
+    server hardening
 - **vcr.py recordings** in `tests/fixtures/recordings/` — captured once from
   live Notion, replayed in tests (no live calls in CI).
 - **Smoke test** (`run_smoke_test.py`) — integration test against live Notion,
@@ -127,9 +133,10 @@ NotionClient (client.py)
 
 ## Design Decisions
 
-See `docs/adr/` for 5 ADRs covering: canonical terminology, space binding,
-markdown export strategy, auth model, and write gate. See `CONTEXT.md` for
-the domain glossary.
+See `docs/adr/` for 12 ADRs covering: canonical terminology, space binding,
+markdown export strategy, auth model, write gate, batched writes (0011), and
+the TTL freshness window (0012, amended v2.2.4 — forced reads bypass it). See
+`CONTEXT.md` for the domain glossary.
 
 ## Release Policy
 

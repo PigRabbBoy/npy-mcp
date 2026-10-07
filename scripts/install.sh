@@ -177,7 +177,8 @@ prompt_clients() {
 
   printf '\n'
   say "Which AI clients should get the Notion MCP server?"
-  printf '    \033[2m● = detected · ↑/↓ move · Space toggle · a all · Enter confirm\033[0m\n'
+  printf '    \033[2m● = detected\033[0m\n'
+  printf '    \033[2m↑/↓ move · Space toggle · a all · Enter confirm\033[0m\n'
 
   if ! exec 3< /dev/tty 2> /dev/null; then
     # no controlling terminal (CI) — default to all
@@ -185,11 +186,8 @@ prompt_clients() {
     return
   fi
 
-  printf '\033[?25l'
-  local first_draw=1
+  printf '\033[?25l\033[s'
   while :; do
-    (( first_draw )) || printf '\033[%dA' "$((n + 1))"
-    first_draw=0
     for ((i = 0; i < n; i++)); do
       local mark="○" marker="  "
       [[ ${checked[$i]} -eq 1 ]] && mark="●"
@@ -214,6 +212,7 @@ prompt_clients() {
     elif [[ -z $key ]]; then
       break
     fi
+    printf '\033[u'
   done
   exec 3<&-
   printf '\033[?25h\n'

@@ -1,6 +1,6 @@
 # ADR 0011: Batched transactions with a hard op cap
 
-**Status**: Accepted (v2.0.0)
+**Status**: Accepted (v2.0.0), amended (v2.2.4 — deletion/edit/row tools join the batching layer)
 
 ## Context
 
@@ -11,6 +11,13 @@ per block/row (~2 ops each). A 10,000-row CSV import cost ~10,000+ HTTP
 requests. The client already supported buffering operations inside an
 `as_atomic_transaction()` context, so the mechanism existed — it was just
 never applied to multi-block write paths.
+
+**Amendment context (v2.2.4, issue #43):** the same round-trip cost showed
+up in the OTHER multi-write operations the tools never covered — deleting
+a page's content was one transaction PER BLOCK via repeated `delete_block`
+MCP calls (the AI client's only delete surface), and row/property edits
+likewise rode one request per item. Users reported line-by-line deletions
+as painfully slow.
 
 ## Decision
 
@@ -27,6 +34,27 @@ single capped batching layer:
    stops, remaining specs are reported as failures, and earlier chunks stay
    committed — the caller can retry the remainder (issue #19 semantics).
 4. `UNPY_LEGACY=1` restores one transaction per block.
+
+**Amendment (v2.2.4):** the batching layer now also covers deletion and
+edits, with new shared core functions in `unpy.blocks` / `unpy.rows` used
+by both MCP tools and the CLI:
+
+- `remove_blocks(client, ids, permanently)` — archive ops (alive:false +
+  listRemove, ~2 per block) in chunked transactions; hard-delete via ONE
+  `deleteBlocks` call; unknown ids resolved up front (batched fetch) and
+  reported before any write.
+- `update_blocks(client, updates)` — batched text/checked/language/color
+  edits via `updateBlockPropertyValue`.
+- `add_rows(client, collection, rows)` — N row creates + property writes +
+  view page_sort + select-option schema ops + two-way relation mirrors,
+  reusing the per-row setters inside one batched transaction.
+- `update_rows(client, updates)` / `delete_rows(client, row_ids)` — same
+  batching for row property maps / row deletion.
+
+New surfaces: MCP `update_blocks` / `delete_blocks` /
+`add_database_rows` / `update_database_rows` / `delete_database_rows`;
+CLI `update-blocks` / `delete-blocks` / `add-database-rows` /
+`update-database-rows` / `delete-database-rows`.
 
 We deliberately did NOT adopt asyncio/httpx for this. The client's public
 API is synchronous and rewrite cost is high; batching alone eliminates most

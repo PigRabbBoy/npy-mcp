@@ -1,6 +1,6 @@
 # ADR 0012: TTL freshness window on forced reads
 
-**Status**: Accepted (v2.0.0)
+**Status**: Accepted (v2.0.0), amended (v2.2.4 — forced reads bypass the window)
 
 ## Context
 
@@ -23,8 +23,16 @@ A freshness window (`Freshness Window`, default 15 seconds, `UNPY_CACHE_TTL`)
 gated on record fetch timestamps in the RecordStore:
 
 - A record fetched (from network or local replay) inside the window is
-  served from cache EVEN when the caller forces a refresh.
-- After the window expires, forced reads fetch as before.
+  served from cache for UNFORCED reads.
+- **Amendment (v2.2.4, issue #43):** a FORCED read (`force_refresh=True`)
+  always bypasses the window. The original "even forced reads serve the
+  cached copy inside the window" rule made long-lived MCP clients read
+  stale snapshots — get_page → update_block/delete_block acted on data the
+  user had already changed in the Notion UI ("the edit seems to not
+  stick"), so the freshness tradeoff collided with correctness. Plain
+  (unforced) reads keep the window; `get_page(refresh=True)` additionally
+  force-refreshes the page's direct children (one batched
+  `refresh_blocks` call).
 - `UNPY_CACHE_TTL=0` or `UNPY_LEGACY=1` restores the always-refresh
   behavior in full.
 - Unforced reads keep exact v1 semantics (never re-fetch cached records).
@@ -38,9 +46,10 @@ per-tool drift.
 
 ## Consequences
 
-- Repeat reads inside 15s cost zero round trips.
-- External edits made within a single freshness window may be invisible
-  until the window lapses — this is the accepted tradeoff (documented as a
-  breaking change; escape hatch available).
+- Repeat UNFORCED reads inside 15s cost zero round trips.
+- FORCED reads always reflect the server's current state (may pay one
+  round trip) — correctness over latency for edit-driving reads.
+- External edits are now visible to any `refresh=true` read immediately;
+  only unforced reads keep the (documented) staleness tradeoff.
 - Timestamp bookkeeping is a monotonic-clock dict write per record update:
   negligible CPU; the dict shares the store's existing lock regime.

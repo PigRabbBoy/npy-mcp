@@ -1,6 +1,6 @@
 # Notion MCP — Full Tool Reference
 
-## Read tools (8 — always available)
+## Read tools (9 — always available)
 
 ### `search`
 
@@ -28,6 +28,7 @@ Fetch a Notion page and its children tree as markdown.
 |---|---|---|---|
 | `page_id` | string | — | Page URL or ID (required) |
 | `depth` | int | 1 | 0=metadata only, 1=direct children, 2=grandchildren, -1=full tree |
+| `refresh` | bool | true | Force a server refresh before reading so edits made outside this session (Notion UI, CLI, other scripts) are visible. Set false to serve from cache. |
 
 **Example call:**
 ```json
@@ -35,6 +36,10 @@ Fetch a Notion page and its children tree as markdown.
 ```
 
 **Returns:** Markdown rendering of the page and its children (indented by level).
+
+Keep `refresh=true` when you plan to edit the page right after reading —
+it also force-refreshes the page's direct children so stale snapshots
+never drive writes.
 
 ---
 
@@ -45,6 +50,7 @@ Fetch a single Notion block as markdown.
 | Arg | Type | Default | Description |
 |---|---|---|---|
 | `block_id` | string | — | Block URL or ID (required) |
+| `refresh` | bool | true | Force refresh from the server before reading |
 
 **Example call:**
 ```json
@@ -182,7 +188,7 @@ token_v2 auth, so this fetch happens through the server's session.
 **Returns:** MCP ImageContent (rendered as an image by the client).
 On error, a text message (block not found or not an image block).
 
-## Write tools (19 — gated by `NOTION_ALLOW_WRITE=1`)
+## Write tools (23 — gated by `NOTION_ALLOW_WRITE=1`)
 
 ### `create_page`
 
@@ -273,6 +279,61 @@ Delete a block (soft delete by default).
 ```
 
 **Returns:** Confirmation message.
+
+---
+
+### `update_blocks`
+
+Edit MANY blocks in ONE batch — one HTTP call per ~100 ops instead of
+one per block. Prefer over repeated `update_block` calls.
+
+| Arg | Type | Default | Description |
+|---|---|---|---|
+| `updates` | string | — | JSON array of `{block_id, text?, checked?, language?, color?}` (required) |
+
+**Update spec format:**
+```json
+[
+  {"block_id": "abc-111", "text": "New text with **markdown**"},
+  {"block_id": "def-222", "checked": true},
+  {"block_id": "ghi-333", "language": "python"},
+  {"block_id": "jkl-444", "color": "red_background"}
+]
+```
+
+- `text` — markdown (code blocks take it verbatim, no markdown pass)
+- `checked` — toggles to-do blocks (bool)
+- `language` — code block language (Notion language id)
+- `color` — block color
+
+**Example call:**
+```json
+{"updates": "[{\"block_id\":\"abc\",\"text\":\"Done!\"},{\"block_id\":\"def\",\"checked\":true}]"}
+```
+
+**Returns:** "Updated N of M block(s)" with per-block failures when any.
+Unknown ids are rejected up front before any write.
+
+---
+
+### `delete_blocks`
+
+Delete MANY blocks in ONE batch — ~2 ops per block, chunked by 100.
+Prefer over repeated `delete_block` calls (deleting 50 blocks ≈ 1 HTTP
+call instead of 50).
+
+| Arg | Type | Default | Description |
+|---|---|---|---|
+| `block_ids` | string | — | JSON array of block URLs or IDs (required) |
+| `permanently` | bool | false | If true, permanently delete after archiving (cannot undo) |
+
+**Example call:**
+```json
+{"block_ids": "[\"abc-111\",\"def-222\",\"ghi-333\"]"}
+```
+
+**Returns:** "Deleted N of M block(s)" with per-block failures when any.
+Unknown ids are reported up front before any write.
 
 ---
 
@@ -370,6 +431,71 @@ Delete a database row.
 ```
 
 **Returns:** Confirmation message.
+
+---
+
+### `add_database_rows`
+
+Add MANY rows to a database in ONE batch — all rows, property writes,
+view insertions and select-option creation buffer into one batched
+transaction (~1 HTTP call per 100 ops instead of several per row).
+
+| Arg | Type | Default | Description |
+|---|---|---|---|
+| `database_id` | string | — | Database block URL/ID or collection ID (required) |
+| `rows` | string | — | JSON array of property objects: `[{"Name":"Row 1","Status":"Todo"},{"Name":"Row 2"}]` (required) |
+
+Same columns-by-name values as `add_database_row`; an empty object
+creates an empty row; select options are created on demand; two-way
+relations mirror to target rows.
+
+**Example call:**
+```json
+{
+  "database_id": "308bd4f4-b4de-80a5-9199-efa43e7f3bee",
+  "rows": "[{\"page\":\"Task A\",\"tags\":[\"Overview\"]},{\"page\":\"Task B\"}]"
+}
+```
+
+**Returns:** "Created N of M row(s) — <id1>, <id2>, …" so ids can be used
+directly; per-row failures listed when any. Unknown columns fail their
+row up front (before any write).
+
+---
+
+### `update_database_rows`
+
+Update property maps on MANY rows in ONE batch.
+
+| Arg | Type | Default | Description |
+|---|---|---|---|
+| `updates` | string | — | JSON array of `{row_id, properties}` objects (required) |
+
+**Example call:**
+```json
+{"updates": "[{\"row_id\":\"abc\",\"properties\":{\"Status\":\"Done\"}},{\"row_id\":\"def\",\"properties\":{\"Points\":3}}]"}
+```
+
+**Returns:** "Updated N of M row(s)" with per-row failures when any;
+unknown row ids reported before any write.
+
+---
+
+### `delete_database_rows`
+
+Delete MANY rows in ONE batch (~2 ops per row, chunked).
+
+| Arg | Type | Default | Description |
+|---|---|---|---|
+| `row_ids` | string | — | JSON array of row block IDs (required) |
+| `permanently` | bool | false | If true, permanently delete after archiving |
+
+**Example call:**
+```json
+{"row_ids": "[\"abc\",\"def\"]"}
+```
+
+**Returns:** "Deleted N of M row(s)" with failures when any.
 
 ---
 
@@ -602,9 +728,12 @@ On failure, an error message (e.g. invalid thread id).
 |---|---|
 | `NOTION_TOKEN_V2` | Notion session token. Required for all tools. |
 | `NOTION_SPACE_ID` | Bind to a specific space. Affects `search`, `list_pages`. |
-| `NOTION_ALLOW_WRITE` | Set to `1` to enable 19 write tools. Without it, only 8 read tools appear. |
+| `NOTION_ALLOW_WRITE` | Set to `1` to enable 23 write tools. Without it, only 9 read tools appear. |
+| `NOTION_ALLOW_COMMENTS` | Set to `1` to enable ONLY `add_comment` (without full write). `NOTION_ALLOW_WRITE=1` implies it. Config file: `comments = true`. |
 | `X-Notion-Token` header | Per-request Notion token (HTTP only). Overrides `NOTION_TOKEN_V2`. |
 | `NOTION_MCP_AUTH_TOKEN` | Bearer token for HTTP auth (not used in stdio). |
+| `UNPY_BATCH_MAX_OPS` | Ops per batched write request (default 100); batch tools split into chunks of this size. |
+| `UNPY_CACHE_TTL` | Record freshness window in seconds (default 15). `0` disables — every read hits the server. Forced reads (`refresh=true`) always bypass the window. |
 
 ## Known limitations
 
@@ -646,7 +775,10 @@ Legacy v1 string-expression formulas (`{"expression": ...}`) are not parsed.
 | `Database not found: <id>` | Not a database block, or wrong ID | Call `get_database` with the correct collection_view block ID |
 | `401 Client Error: Unauthorized` | token_v2 is invalid or expired | Extract a fresh `token_v2` from browser DevTools |
 | `Write commands require NOTION_ALLOW_WRITE=1` | Write attempted without gate env var | Set `NOTION_ALLOW_WRITE=1` on the server |
-| `Unsupported field: <name>` | `update_block` called with invalid field | Use `"title"` or `"checked"` only |
+| `Unsupported field: <name>` | `update_block` called with invalid field | Use `"title"` or `"checked"` (batch edits: `update_blocks`) |
+| `block_ids must be a JSON array` | `delete_blocks`/`update_blocks` got a non-array | Wrap the ids in `[...]` |
+| `'properties' must be an object` | `update_database_rows` update spec lacks an object `properties` | Shape: `[{"row_id":"…","properties":{…}}]` |
+| `no column named '<name>'` | Row add/update names a column that doesn't exist | Check names with `get_database` |
 | `Cannot add rollup column: relation property 'X' not found…` | Rollup names a relation property that doesn't exist on this database | Check the property name with `get_database(full_schema=true)` first |
 | `Relation target database '<id>' not found` | Relation target doesn't exist or token lacks access | Verify the target database ID |
 

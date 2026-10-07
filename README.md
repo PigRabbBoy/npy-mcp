@@ -7,8 +7,8 @@
 Unofficial Python 3.12+ client for Notion's internal API (v3). Three packages
 in one repo:
 
-- **unpy-mcp** — MCP server (28 tools) for Claude Desktop, Cursor, VS Code, Codex, Claude Code
-- **unpy-cli** — command-line tool (26 commands, same capabilities)
+- **unpy-mcp** — MCP server (32 tools) for Claude Desktop, Cursor, VS Code, Codex, Claude Code
+- **unpy-cli** — command-line tool (37 commands, same capabilities)
 - **unpy-core** — Python library you can build on directly
 
 Everything is powered by the `token_v2` cookie from your logged-in Notion
@@ -59,7 +59,7 @@ The installer asks:
    Application → Cookies → `token_v2`)
 3. **`NOTION_SPACE_ID`** — optional; shown how to find it if you're in
    multiple workspaces
-4. **Write tools?** — opt-in (`NOTION_ALLOW_WRITE`), default read-only
+4. **Write tools?** — opt-in (`NOTION_ALLOW_WRITE`), default read-only; comments-only opt-in (`NOTION_ALLOW_COMMENTS`) available
 5. **Install the agent skill?** — optional; copies `SKILL.md` into 56
    skill-enabled clients (Claude Code, Continue, Goose, Crush, OpenHands,
    Devin, Droid, AiderDesk, Windsurf, … — the full table is
@@ -167,7 +167,7 @@ Then use `"command": "python"`, `"args": ["-m", "unpy_mcp"]` in the config.
 <details>
 <summary>💡 About write access (create/update/delete)</summary>
 
-The server starts in **read-only** mode (8 read tools). The installer asks
+The server starts in **read-only** mode (9 read tools). The installer asks
 whether to enable writes; to change it later, add one line to the `env` block
 or just re-run the installer:
 
@@ -191,7 +191,7 @@ explicitly opt in. See [ADR-0005](docs/adr/0005-read-write-scope-gated.md).
 
 ## What your AI can do
 
-All **28 tools** (9 read + 19 write):
+All **32 tools** (9 read + 23 write):
 
 | Read — always available | |
 |---|---|
@@ -210,10 +210,13 @@ All **28 tools** (9 read + 19 write):
 | `create_page` | New page under a parent |
 | `append_blocks` | Add blocks (13 types) to a page |
 | `update_block` | Edit text / toggle checkbox |
+| `update_blocks` | Edit MANY blocks in one batch (text/checked/language/color) |
 | `delete_block` | Trash or permanently remove |
+| `delete_blocks` | Trash many blocks in one batch |
 | `move_block` | Reparent a block |
 | `add_alias` | Alias a page into another parent |
 | `add_database_row` / `update_database_row` / `delete_database_row` | Manage rows |
+| `add_database_rows` / `update_database_rows` / `delete_database_rows` | Manage rows **in batches** |
 | `create_database` / `add_column` | Provision databases with **relation / formula / rollup** columns |
 | `create_media` | Attach image/file via URL or local upload |
 | `create_embed` | Embed 20 providers (YouTube, Figma, Maps…) |
@@ -252,7 +255,7 @@ Full reference: [`TOOLS.md`](packages/unpy-mcp/skills/unpy-mcp/TOOLS.md)
 
 ## CLI
 
-Prefer the terminal? Same capabilities, 25 commands:
+Prefer the terminal? Same capabilities, 37 commands:
 
 ```bash
 # install from source (provides the `unpy` command)
@@ -287,7 +290,9 @@ uv run unpy auth whoami && uv run unpy auth spaces
 > Tip: `source .venv/bin/activate` once and you can drop the `uv run` prefix.
 
 Run `unpy <command> --help` for every option. Write commands refuse to run
-without `NOTION_ALLOW_WRITE=1`.
+without `NOTION_ALLOW_WRITE=1` (or full write in the config file); comment
+commands accept either full write or the comment-only
+`NOTION_ALLOW_COMMENTS=1` / `comments = true` config flag.
 
 ---
 
@@ -433,7 +438,7 @@ row.Done = True
 Ship-ready skills so your agent knows which tool to use when:
 
 - `SKILL.md` — when to use which tool, common workflows, write safety rules
-- `TOOLS.md` — full 27-tool reference (args, types, examples, error messages)
+- `TOOLS.md` — full 32-tool reference (args, types, examples, error messages)
 
 The installer can copy the skill into every supported client in one step
 (answer **a** at the skill prompt, or run with `--skills`; `--no-skills`
@@ -494,7 +499,7 @@ cp -r packages/unpy-mcp/skills/release ~/.claude/skills/release
 
 ```bash
 uv sync --extra dev                       # install with dev deps
-python -m pytest tests/ -v                # 126 tests, no live Notion calls
+python -m pytest tests/ -v                # 389 tests, no live Notion calls
 python run_smoke_test.py --page <URL> --token <TOKEN_V2>   # live integration test
 ```
 
@@ -509,9 +514,9 @@ unpy-mcp/
 │   │   ├── markdown.py            ← rich-text ↔ CommonMark
 │   │   ├── auth.py                ← token + space resolution
 │   │   └── operations.py          ← transaction op builder
-│   ├── unpy-cli/src/unpy_cli/     ← CLI (Typer, 26 commands)
-│   └── unpy-mcp/src/unpy_mcp/     ← MCP server (28 tools, stdio + HTTP)
-├── tests/                         ← 126 tests (pytest + vcr.py)
+│   ├── unpy-cli/src/unpy_cli/     ← CLI (Typer, 37 commands)
+│   └── unpy-mcp/src/unpy_mcp/     ← MCP server (32 tools, stdio + HTTP)
+├── tests/                         ← 389 tests (pytest + vcr.py)
 ├── docs/adr/                      ← 8 Architecture Decision Records
 ├── CONTEXT.md                     ← Domain glossary
 ├── scripts/                       ← one-command installer + uninstaller

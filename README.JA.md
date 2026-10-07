@@ -9,8 +9,8 @@
 Notion の内部 API（v3）向けの非公式 Python 3.12+ クライアント。1 つのリポジトリに
 3 パッケージ：
 
-- **unpy-mcp** — MCP サーバー（25 ツール）。Claude Desktop、Cursor、VS Code、Codex、Claude Code に対応
-- **unpy-cli** — コマンドラインツール（25 コマンド、MCP と同等の機能）
+- **unpy-mcp** — MCP サーバー（32 ツール）。Claude Desktop、Cursor、VS Code、Codex、Claude Code に対応
+- **unpy-cli** — コマンドラインツール（37 コマンド、MCP と同等の機能）
 - **unpy-core** — 単体で使える Python ライブラリ
 
 すべて `token_v2` Cookie（ログイン済み Notion ブラウザセッションのもの）で動作するため、
@@ -59,7 +59,7 @@ irm https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/install.
 2. **`NOTION_TOKEN_V2`** — 画面上で手順を案内（DevTools → Application →
    Cookies → `token_v2`）
 3. **`NOTION_SPACE_ID`** — 任意。複数ワークスペースがある場合の探し方を案内
-4. **書き込みツールを有効にする？** — オプトイン（`NOTION_ALLOW_WRITE`）、デフォルトは読み取り専用
+4. **書き込みツールを有効にする？** — オプトイン（`NOTION_ALLOW_WRITE`）、デフォルトは読み取り専用；コメントのみモード（`NOTION_ALLOW_COMMENTS`）も別途あり
 
 完了したら AI クライアントを完全に再起動して、試してみてください：
 > 「Notion で project status に関するページを探して」 — 以上です。
@@ -163,7 +163,7 @@ pip install "git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packa
 <details>
 <summary>💡 書き込み権限について（作成・更新・削除）</summary>
 
-サーバーは**読み取り専用**（読み取り 8 ツール）で起動します。インストーラーが
+サーバーは**読み取り専用**（読み取り 9 ツール）で起動します。インストーラーが
 書き込みの有効化を尋ねます。後で変更するには `env` に 1 行追加するか、
 インストーラーを再実行：
 
@@ -186,7 +186,7 @@ pip install "git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packa
 
 ## AI にできること
 
-全 **25 ツール**（読み取り 8 + 書き込み 17）：
+全 **32 ツール**（読み取り 9 + 書き込み 23）：
 
 | 読み取り — 常に利用可能 | |
 |---|---|
@@ -204,10 +204,13 @@ pip install "git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packa
 | `create_page` | 親の下に新しいページを作成 |
 | `append_blocks` | ページにブロックを追加（13 種類） |
 | `update_block` | テキスト編集 / チェックボックス切替 |
+| `update_blocks` | 複数ブロックを一括編集（テキスト/チェック/言語/色） |
 | `delete_block` | ゴミ箱へ移動 / 完全削除 |
+| `delete_blocks` | 複数ブロックを一括削除 |
 | `move_block` | ブロックを別の親へ移動 |
 | `add_alias` | ページのエイリアスを別の親に作成 |
 | `add_database_row` / `update_database_row` / `delete_database_row` | 行の管理 |
+| `add_database_rows` / `update_database_rows` / `delete_database_rows` | 行を**一括**管理 |
 | `create_database` / `add_column` | **relation / formula / rollup** 列付きデータベースをプロビジョニング |
 | `create_media` | URL またはローカルファイルから画像/ファイルを添付 |
 | `create_embed` | 20 プロバイダーの埋め込み（YouTube、Figma、Maps…） |
@@ -427,7 +430,7 @@ row.Done = True
 エージェントがどのツールをいつ使うべきか分かる、すぐに使えるスキル：
 
 - `SKILL.md` — どのツールをいつ使うか、よくあるワークフロー、書き込みの安全規則
-- `TOOLS.md` — 27 ツールの完全リファレンス（引数、型、例、エラーメッセージ）
+- `TOOLS.md` — 32 ツールの完全リファレンス（引数、型、例、エラーメッセージ）
 
 インストーラーは 56 のスキル対応クライアント（Claude Code、Continue、Goose、
 Crush、OpenHands、Devin、Droid、AiderDesk、Windsurf など）にスキルを一括コピー
@@ -465,7 +468,7 @@ unpy-mcp/
 │   │   ├── auth.py                ← トークン + スペースの解決
 │   │   └── operations.py          ← トランザクション操作ビルダー
 │   ├── unpy-cli/src/unpy_cli/     ← CLI（Typer、25 コマンド）
-│   └── unpy-mcp/src/unpy_mcp/     ← MCP サーバー（25 ツール、stdio + HTTP）
+│   └── unpy-mcp/src/unpy_mcp/     ← MCP サーバー（32 ツール、stdio + HTTP）
 ├── tests/                         ← 126 テスト（pytest + vcr.py）
 ├── docs/adr/                      ← アーキテクチャ決定記録 8 本
 ├── CONTEXT.md                     ← ドメイン用語集

@@ -9,7 +9,7 @@
 ไคลเอนต์ Python 3.12+ แบบ non-official สำหรับ internal API (v3) ของ Notion
 มี 3 แพ็กเกจใน repo เดียว:
 
-- **unpy-mcp** — MCP server (25 tools) สำหรับ Claude Desktop, Cursor, VS Code, Codex, Claude Code
+- **unpy-mcp** — MCP server (32 tools) สำหรับ Claude Desktop, Cursor, VS Code, Codex, Claude Code
 - **unpy-cli** — เครื่องมือ command line (25 คำสั่ง ครบความสามารถเท่ากัน)
 - **unpy-core** — Python library สำหรับต่อยอดในโค้ดของคุณเอง
 
@@ -60,7 +60,7 @@ irm https://raw.githubusercontent.com/PigRabbBoy/npy-mcp/master/scripts/install.
 2. **`NOTION_TOKEN_V2`** — มีวิธีทำบนหน้าจอบอก (DevTools → Application →
    Cookies → `token_v2`)
 3. **`NOTION_SPACE_ID`** — ไม่บังคับ; บอกวิธีหาถ้าคุณอยู่หลาย workspace
-4. **เปิด write tools ไหม?** — opt-in (`NOTION_ALLOW_WRITE`), ค่าเริ่มต้นอ่านอย่างเดียว
+4. **เปิด write tools ไหม?** — opt-in (`NOTION_ALLOW_WRITE`), ค่าเริ่มต้นอ่านอย่างเดียว; มีโหมดเฉพาะคอมเมนต์ (`NOTION_ALLOW_COMMENTS`) แยกต่างหาก
 
 จากนั้น restart AI client แบบปิดสนิทแล้วลองถาม:
 > "หาหน้าเกี่ยวกับ project status ใน Notion" — เท่านี้เอง
@@ -163,7 +163,7 @@ pip install "git+https://github.com/PigRabbBoy/npy-mcp@v2.1.0#subdirectory=packa
 <details>
 <summary>💡 เรื่องสิทธิ์เขียน (สร้าง/แก้ไข/ลบ)</summary>
 
-Server เริ่มแบบ **อ่านอย่างเดียว** (8 read tools) ตัวติดตั้งจะถามว่าจะเปิด
+Server เริ่มแบบ **อ่านอย่างเดียว** (9 read tools) ตัวติดตั้งจะถามว่าจะเปิด
 write ไหม ถ้าอยากเปลี่ยนทีหลัง ให้เพิ่มบรรทัดเดียวใน `env` หรือรันตัวติดตั้ง
 ซ้ำ:
 
@@ -186,7 +186,7 @@ write ไหม ถ้าอยากเปลี่ยนทีหลัง ใ
 
 ## AI ของคุณทำอะไรได้บ้าง
 
-ครบทั้งหมด **25 tools** (อ่าน 8 + เขียน 17):
+ครบทั้งหมด **32 tools** (อ่าน 9 + เขียน 23):
 
 | อ่าน — ใช้ได้เสมอ | |
 |---|---|
@@ -204,10 +204,13 @@ write ไหม ถ้าอยากเปลี่ยนทีหลัง ใ
 | `create_page` | สร้าง page ใหม่ใต้ parent |
 | `append_blocks` | เพิ่ม block (13 ชนิด) ลง page |
 | `update_block` | แก้ข้อความ / กด checkbox |
+| `update_blocks` | แก้หลาย block ในครั้งเดียว (ข้อความ/checkbox/language/color) |
 | `delete_block` | ลบถังขยะ หรือลบถาวร |
+| `delete_blocks` | ลบหลาย block ในครั้งเดียว (batch) |
 | `move_block` | ย้าย block ไปก้อนอื่น |
 | `add_alias` | ทำ alias ของ page ไปอีก parent |
 | `add_database_row` / `update_database_row` / `delete_database_row` | จัดการ rows |
+| `add_database_rows` / `update_database_rows` / `delete_database_rows` | จัดการ rows **แบบ batch** |
 | `create_database` / `add_column` | สร้าง database พร้อมคอลัมน์ **relation / formula / rollup** |
 | `create_media` | แนบรูป/ไฟล์จาก URL หรืออัปโหลดจากเครื่อง |
 | `create_embed` | ฝังเนื้อหา 20 providers (YouTube, Figma, Maps…) |
@@ -426,7 +429,7 @@ row.Done = True
 Skill พร้อมใช้ ช่วยให้ agent รู้ว่าควรใช้ tool ไหนเมื่อไหร่:
 
 - `SKILL.md` — tool ไหนใช้เมื่อไหร่, workflow ที่พบบ่อย, กติกาความปลอดภัย
-- `TOOLS.md` — คู่มือเต็ม 27 tools (args, types, ตัวอย่าง, error messages)
+- `TOOLS.md` — คู่มือเต็ม 32 tools (args, types, ตัวอย่าง, error messages)
 
 Installer สามารถ copy skill ให้ client ที่รองรับ skills ถึง 56 ตัวในครั้งเดียว
 (Claude Code, Continue, Goose, Crush, OpenHands, Devin, Droid, AiderDesk,
@@ -448,7 +451,7 @@ cp -r packages/unpy-mcp/skills/release ~/.claude/skills/release
 
 ```bash
 uv sync --extra dev                       # ติดตั้งพร้อม dev deps
-python -m pytest tests/ -v                # 126 tests ไม่ต้องเรียก Notion จริง
+python -m pytest tests/ -v                # 389 tests ไม่ต้องเรียก Notion จริง
 python run_smoke_test.py --page <URL> --token <TOKEN_V2>   # ทดสอบเชื่อม Notion จริง
 ```
 
@@ -463,9 +466,9 @@ unpy-mcp/
 │   │   ├── markdown.py            ← rich-text ↔ CommonMark
 │   │   ├── auth.py                ← แก้ปัญหา token + space
 │   │   └── operations.py          ← ตัวสร้าง transaction op
-│   ├── unpy-cli/src/unpy_cli/     ← CLI (Typer, 25 commands)
-│   └── unpy-mcp/src/unpy_mcp/     ← MCP server (25 tools, stdio + HTTP)
-├── tests/                         ← 126 tests (pytest + vcr.py)
+│   ├── unpy-cli/src/unpy_cli/     ← CLI (Typer, 37 commands)
+│   └── unpy-mcp/src/unpy_mcp/     ← MCP server (32 tools, stdio + HTTP)
+├── tests/                         ← 389 tests (pytest + vcr.py)
 ├── docs/adr/                      ← Architecture Decision Records 8 ฉบับ
 ├── CONTEXT.md                     ← อภิธานศัพท์ของ domain
 ├── scripts/                       ← installer + uninstaller คำสั่งเดียว

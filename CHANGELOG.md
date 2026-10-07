@@ -6,6 +6,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Stale reads inside the TTL cache broke edits** (issue #43): `force_refresh=True`
+  (get_page, get_block, update_block, delete_block…) served the cached copy when the
+  record was fetched <15s ago, so edits made in the Notion UI seconds earlier were
+  invisible and writes acted on stale blocks — the reported "edit seems to not stick".
+  Forced reads now always bypass the freshness window; plain (unforced) reads keep the
+  TTL benefit. UNPY_CACHE_TTL=0 / UNPY_LEGACY=1 unchanged.
+
+### Added
+- **Batch deletion** (issue #43): `unpy.blocks.remove_blocks(client, ids, permanently)`
+  soft-deletes many blocks in one batched transaction (~2 ops per block, flushed in
+  chunks of `UNPY_BATCH_MAX_OPS`) instead of one HTTP transaction per block; MCP tool
+  `delete_blocks(block_ids: JSON array)` and CLI `delete-blocks '["id1","id2"]'`.
+  Unknown ids are reported up front (before any write); a failed chunk stops the flush
+  and reports the remaining ids.
+- **Batch edits** (issue #43): `unpy.blocks.update_blocks(client, updates)` applies
+  many block edits ({block_id, text?, checked?, language?, color?}) in one batched
+  transaction — markdown text (code blocks verbatim), todo checks, code language,
+  block color; MCP tool `update_blocks(updates: JSON array)` and CLI
+  `update-blocks '[{"block_id":"…","text":"…"}]'`.
+- **Batch database rows** (issue #43): `unpy.rows` module —
+  `add_rows(client, collection, rows)` creates N rows (create_record + property
+  writes + view page_sort + select-option schema ops + two-way relation mirrors)
+  inside ONE batched transaction; `update_rows(client, updates)` applies
+  {row_id, properties} maps to many rows the same way; `delete_rows` delegates to
+  `remove_blocks`. MCP tools `add_database_rows` / `update_database_rows` /
+  `delete_database_rows`; CLI `add/update/delete-database-rows`. All reuse the
+  single-row setters so schema auto-add and relation mirroring behave identically —
+  only the transport is batched.
+- `NotionClient.refresh_blocks(ids)` — batch force-refresh that expires TTL stamps and
+  syncs in batches of 50; `get_page(refresh=True)` now also force-refreshes the page's
+  direct children so UI edits made seconds ago are visible immediately.
+
+### Tests
+- 22 new tests (`tests/test_issue43.py`: forced-refresh TTL bypass ×3, batch deletion
+  ×6, batch edits ×5, refresh_blocks ×2; `tests/test_issue43_rows.py`: batch rows
+  add ×3, update ×3, delete ×1); updated the two TTL tests that asserted the old
+  "forced get serves the cached copy" behavior; tool-count tests updated (9 read,
+  38 write-gated). Suite: 389 passing.
+
 ## [2.2.3] - 2026-10-06
 
 ### Fixed
