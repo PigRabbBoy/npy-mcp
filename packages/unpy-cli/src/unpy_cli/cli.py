@@ -19,7 +19,7 @@ Commands:
   delete-database-row Delete a database row (write)
 
   get-comments     Read comment threads on a page (read)
-  add-comment      Comment on a page — new thread or reply (write)
+  add-comment      Comment on a page — new thread or reply (write or comments mode)
 
   get-image        Download an image/file block (read)
   export           Export a page/database to PDF/HTML/Markdown & CSV (read)
@@ -69,30 +69,67 @@ app.add_typer(auth_app, name="auth")
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _write_allowed() -> bool:
+    """True when full write is allowed (env or config allow_write)."""
+    if os.environ.get("NOTION_ALLOW_WRITE") == "1":
+        return True
+    config_file = os.path.join(
+        os.environ.get("NOTION_CONFIG_DIR", os.path.expanduser("~/.config/unpy-mcp")),
+        "config.toml",
+    )
+    if os.path.exists(config_file):
+        try:
+            import tomllib
+
+            with open(config_file, "rb") as f:
+                if tomllib.load(f).get("allow_write"):
+                    return True
+        except Exception:
+            pass
+    return False
+
+
 def _check_write_enabled() -> None:
     """Gate write commands behind NOTION_ALLOW_WRITE=1 env var (or
     allow_write = true in the unpy config file)."""
-    if os.environ.get("NOTION_ALLOW_WRITE") != "1":
-        config_file = os.path.join(
-            os.environ.get("NOTION_CONFIG_DIR", os.path.expanduser("~/.config/unpy-mcp")),
-            "config.toml",
-        )
-        if os.path.exists(config_file):
-            try:
-                import tomllib
+    if _write_allowed():
+        return
+    typer.echo(
+        "Write commands require NOTION_ALLOW_WRITE=1 env var "
+        "(or allow_write = true in ~/.config/unpy-mcp/config.toml).\n"
+        "Example: NOTION_ALLOW_WRITE=1 notion create-page ...",
+        err=True,
+    )
+    raise typer.Exit(1)
 
-                with open(config_file, "rb") as f:
-                    if tomllib.load(f).get("allow_write"):
-                        return
-            except Exception:
-                pass
-        typer.echo(
-            "Write commands require NOTION_ALLOW_WRITE=1 env var "
-            "(or allow_write = true in ~/.config/unpy-mcp/config.toml).\n"
-            "Example: NOTION_ALLOW_WRITE=1 notion create-page ...",
-            err=True,
-        )
-        raise typer.Exit(1)
+
+def _check_comments_enabled() -> None:
+    """Gate comment commands behind full write OR the comment-only opt-in
+    (NOTION_ALLOW_COMMENTS=1 / comments = true in the config file)."""
+    if _write_allowed():
+        return
+    if os.environ.get("NOTION_ALLOW_COMMENTS") == "1":
+        return
+    config_file = os.path.join(
+        os.environ.get("NOTION_CONFIG_DIR", os.path.expanduser("~/.config/unpy-mcp")),
+        "config.toml",
+    )
+    if os.path.exists(config_file):
+        try:
+            import tomllib
+
+            with open(config_file, "rb") as f:
+                if tomllib.load(f).get("comments"):
+                    return
+        except Exception:
+            pass
+    typer.echo(
+        "Comment commands require NOTION_ALLOW_WRITE=1 OR NOTION_ALLOW_COMMENTS=1 "
+        "(or allow_write/comments = true in ~/.config/unpy-mcp/config.toml).\n"
+        "Example: NOTION_ALLOW_COMMENTS=1 notion add-comment <page> --text hi",
+        err=True,
+    )
+    raise typer.Exit(1)
 
 
 def _resolve_collection(client, database_id: str):
@@ -369,6 +406,28 @@ def update_block(
     typer.echo(f"Updated {field} on block {block_id}")
 
 
+@app.command(name="update-blocks")
+def update_blocks(
+    updates: str = typer.Argument(..., help='JSON array, e.g. \'[{"block_id":"abc","text":"New"}]\' — fields: block_id (required), text (markdown), checked (bool), language, color'),
+    token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
+) -> None:
+    """Edit many blocks in ONE batch (text/checked/language/color)."""
+    _check_write_enabled()
+    from unpy.blocks import update_blocks
+
+    client = get_client(token_arg=token)
+    try:
+        specs = json.loads(updates)
+    except json.JSONDecodeError as exc:
+        typer.echo(f"Invalid updates JSON: {exc}", err=True)
+        raise typer.Exit(1)
+    count, failures = update_blocks(client, specs)
+    typer.echo(f"Updated {count} of {len(specs) if isinstance(specs, list) else 0} block(s)")
+    if failures:
+        typer.echo("; ".join(failures), err=True)
+        raise typer.Exit(1)
+
+
 @app.command(name="delete-block")
 def delete_block(
     block_id: str = typer.Argument(..., help="Block URL or ID"),
@@ -385,6 +444,33 @@ def delete_block(
     block.remove(permanently=permanently)
     action = "Permanently deleted" if permanently else "Deleted (soft)"
     typer.echo(f"{action} block {block_id}")
+
+
+@app.command(name="delete-blocks")
+def delete_blocks(
+    block_ids: str = typer.Argument(..., help='JSON array of block URLs/IDs, e.g. \'["abc","def"]\''),
+    permanently: bool = typer.Option(False, "--permanently", help="Permanently delete (cannot undo)"),
+    token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
+) -> None:
+    """Delete many blocks in ONE batch (~2 ops per block, chunked by 100)."""
+    _check_write_enabled()
+    from unpy.blocks import remove_blocks
+
+    client = get_client(token_arg=token)
+    try:
+        ids = json.loads(block_ids)
+    except json.JSONDecodeError as exc:
+        typer.echo(f"Invalid block_ids JSON: {exc}", err=True)
+        raise typer.Exit(1)
+    if not isinstance(ids, list):
+        typer.echo("block_ids must be a JSON array of block ids", err=True)
+        raise typer.Exit(1)
+    count, failures = remove_blocks(client, ids, permanently=permanently)
+    action = "Permanently deleted" if permanently else "Deleted (soft)"
+    typer.echo(f"{action} {count} of {len(ids)} block(s)")
+    if failures:
+        typer.echo("; ".join(failures), err=True)
+        raise typer.Exit(1)
 
 
 @app.command(name="move-block")
@@ -485,6 +571,81 @@ def delete_database_row(
     except TypeError:
         row.remove()
     typer.echo(f"Deleted row {row_id}")
+
+
+@app.command(name="add-database-rows")
+def add_database_rows(
+    database_id: str = typer.Argument(..., help="Database block URL/ID or collection ID"),
+    rows: str = typer.Option(..., "--rows", "-r", help='JSON array of property objects, e.g. \'[{"Name":"Row 1"},{"Name":"Row 2"}]\''),
+    token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
+) -> None:
+    """Add many rows to a database in ONE batch (~1 HTTP call per 100 ops)."""
+    _check_write_enabled()
+    from unpy.schema import resolve_collection_for_write
+    from unpy.rows import add_rows as _add_rows
+
+    client = get_client(token_arg=token)
+    collection = resolve_collection_for_write(client, database_id)
+    if isinstance(collection, str):
+        typer.echo(collection, err=True)
+        raise typer.Exit(1)
+    try:
+        specs = json.loads(rows)
+    except json.JSONDecodeError as exc:
+        typer.echo(f"Invalid rows JSON: {exc}", err=True)
+        raise typer.Exit(1)
+    row_ids, failures = _add_rows(client, collection, specs)
+    typer.echo(f"Created {len(row_ids)} of {len(specs) if isinstance(specs, list) else 0} row(s)")
+    if row_ids:
+        typer.echo(", ".join(row_ids))
+    if failures:
+        typer.echo("; ".join(failures), err=True)
+        raise typer.Exit(1)
+
+
+@app.command(name="update-database-rows")
+def update_database_rows(
+    updates: str = typer.Argument(..., help='JSON array, e.g. \'[{"row_id":"abc","properties":{"Status":"Done"}}]\''),
+    token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
+) -> None:
+    """Update many database rows in ONE batch."""
+    _check_write_enabled()
+    from unpy.rows import update_rows as _update_rows
+
+    client = get_client(token_arg=token)
+    try:
+        specs = json.loads(updates)
+    except json.JSONDecodeError as exc:
+        typer.echo(f"Invalid updates JSON: {exc}", err=True)
+        raise typer.Exit(1)
+    count, failures = _update_rows(client, specs)
+    typer.echo(f"Updated {count} of {len(specs) if isinstance(specs, list) else 0} row(s)")
+    if failures:
+        typer.echo("; ".join(failures), err=True)
+        raise typer.Exit(1)
+
+
+@app.command(name="delete-database-rows")
+def delete_database_rows(
+    row_ids: str = typer.Argument(..., help='JSON array of row IDs, e.g. \'["abc","def"]\''),
+    permanently: bool = typer.Option(False, "--permanently", help="Permanently delete"),
+    token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
+) -> None:
+    """Delete many database rows in ONE batch."""
+    _check_write_enabled()
+    from unpy.rows import delete_rows as _delete_rows
+
+    client = get_client(token_arg=token)
+    try:
+        ids = json.loads(row_ids)
+    except json.JSONDecodeError as exc:
+        typer.echo(f"Invalid row_ids JSON: {exc}", err=True)
+        raise typer.Exit(1)
+    count, failures = _delete_rows(client, ids, permanently=permanently)
+    typer.echo(f"Deleted {count} of {len(ids) if isinstance(ids, list) else 0} row(s)")
+    if failures:
+        typer.echo("; ".join(failures), err=True)
+        raise typer.Exit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -1226,7 +1387,7 @@ def add_comment(
     token: str = typer.Option(None, "--token", "-t", help="token_v2 (overrides env/config)"),
 ) -> None:
     """Add a comment to a page (new thread, or reply with --thread)."""
-    _check_write_enabled()
+    _check_comments_enabled()
     client = get_client(token_arg=token)
     try:
         result = client.add_comment(

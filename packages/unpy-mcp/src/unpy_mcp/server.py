@@ -1,6 +1,6 @@
 """npy-mcp server — Notion MCP server (stdio + HTTP).
 
-Exposes 7 read tools (+ write tools when NOTION_ALLOW_WRITE=1).
+Exposes 9 read tools (+ 23 write tools when NOTION_ALLOW_WRITE=1).
 Uses MCP Python SDK v2 (MCPServer + decorator pattern).
 
 Per-request token: HTTP clients can send X-Notion-Token header to use
@@ -1161,6 +1161,15 @@ def get_page(
     page = client.get_block(page_id, force_refresh=refresh)
     if page is None:
         return f"Page not found: {page_id}"
+    if refresh:
+        # the page chunk only refreshes the page record itself; force-
+        # refresh the direct children too (one batched syncRecordValues),
+        # otherwise edits made in the Notion UI seconds ago are hidden by
+        # the 15s TTL cache and writes act on stale blocks (issue #43)
+        try:
+            client.refresh_blocks(page.get("content") or [])
+        except Exception:
+            pass
     lines = _tree_to_markdown(client, page, depth)
     return "\n".join(lines)
 
@@ -1640,7 +1649,29 @@ def _resolve_write_enabled() -> bool:
     return False
 
 
+def _resolve_comments_enabled() -> bool:
+    """Comment gate: full write implies comments; otherwise the dedicated
+    NOTION_ALLOW_COMMENTS env var (env wins), then the config file's
+    `comments` key. Lets read-only deployments post comments without
+    enabling page-content writes."""
+    if _resolve_write_enabled():
+        return True
+    if os.environ.get("NOTION_ALLOW_COMMENTS"):
+        return os.environ["NOTION_ALLOW_COMMENTS"] == "1"
+    config_file = Path(
+        os.environ.get("NOTION_CONFIG_DIR", "~/.config/unpy-mcp")
+    ).expanduser() / "config.toml"
+    if config_file.exists():
+        try:
+            with open(config_file, "rb") as f:
+                return bool(tomllib.load(f).get("comments"))
+        except Exception:
+            return False
+    return False
+
+
 _WRITE_ENABLED = _resolve_write_enabled()
+_COMMENTS_ENABLED = _resolve_comments_enabled()
 
 
 def _validate_block_specs(block_specs, type_map: dict) -> list[str]:
@@ -1834,20 +1865,7 @@ def get_comments(
     return "\n".join(lines)
 
 
-if _WRITE_ENABLED:
-    from unpy.block import (
-        PageBlock, TextBlock, TodoBlock, HeaderBlock, SubheaderBlock,
-        SubsubheaderBlock, CalloutBlock, BulletedListBlock, NumberedListBlock,
-        QuoteBlock, CodeBlock, DividerBlock, ToggleBlock, EquationBlock,
-        CollectionViewBlock, CollectionViewPageBlock,
-        EmbedBlock, BookmarkBlock, ImageBlock, VideoBlock, AudioBlock,
-        FileBlock, PDFBlock, TweetBlock, GistBlock, FigmaBlock, LoomBlock,
-        TypeformBlock, CodepenBlock, MapsBlock, InvisionBlock, FramerBlock,
-        DriveBlock, HtmlBlock, MiroBlock, ExcalidrawBlock, ReplitBlock,
-        DeepnoteBlock, SketchBlock, AbstractBlock, MixpanelBlock,
-    )
-    from unpy.collection import Collection
-
+if _COMMENTS_ENABLED:
     @mcp.tool()
     def add_comment(
         block_id: str,
@@ -1875,6 +1893,21 @@ if _WRITE_ENABLED:
             f"Comment added: {result['comment_id']} "
             f"(discussion: {result['discussion_id']})"
         )
+
+
+if _WRITE_ENABLED:
+    from unpy.block import (
+        PageBlock, TextBlock, TodoBlock, HeaderBlock, SubheaderBlock,
+        SubsubheaderBlock, CalloutBlock, BulletedListBlock, NumberedListBlock,
+        QuoteBlock, CodeBlock, DividerBlock, ToggleBlock, EquationBlock,
+        CollectionViewBlock, CollectionViewPageBlock,
+        EmbedBlock, BookmarkBlock, ImageBlock, VideoBlock, AudioBlock,
+        FileBlock, PDFBlock, TweetBlock, GistBlock, FigmaBlock, LoomBlock,
+        TypeformBlock, CodepenBlock, MapsBlock, InvisionBlock, FramerBlock,
+        DriveBlock, HtmlBlock, MiroBlock, ExcalidrawBlock, ReplitBlock,
+        DeepnoteBlock, SketchBlock, AbstractBlock, MixpanelBlock,
+    )
+    from unpy.collection import Collection
 
     def _add_blocks_from_specs(parent, block_specs: list) -> tuple[int, list[str]]:
         """Create child blocks from [{type, text, checked?, icon?, language?}] specs.
@@ -2008,6 +2041,36 @@ if _WRITE_ENABLED:
         return f"Updated {field} on block {block_id}"
 
     @mcp.tool()
+    def update_blocks(
+        updates: str,
+    ) -> str:
+        """Edit MANY blocks in ONE batch ({block_id, text?, checked?, language?, color?}).
+
+        Args:
+            updates: JSON array, e.g.
+                [{"block_id":"abc","text":"New text"},{"block_id":"def","checked":true}]
+                text is markdown (code blocks take it verbatim); checked toggles
+                to-dos; language applies to code blocks; color sets block color.
+
+        Returns:
+            "Updated N of M block(s)" with per-block failures if any.
+            All edits are batched into chunks of 100 ops — editing 40 blocks
+            costs ~1 HTTP call instead of 40.
+        """
+        client = _get_client()
+        try:
+            specs = json.loads(updates)
+        except json.JSONDecodeError as exc:
+            return f"Invalid updates JSON: {exc}; 0 blocks updated"
+        from unpy.blocks import update_blocks
+
+        count, failures = update_blocks(client, specs)
+        msg = f"Updated {count} of {len(specs) if isinstance(specs, list) else 0} block(s)"
+        if failures:
+            msg += " (" + "; ".join(failures) + ")"
+        return msg
+
+    @mcp.tool()
     def delete_block(
         block_id: str,
         permanently: bool = False,
@@ -2028,6 +2091,38 @@ if _WRITE_ENABLED:
         block.remove(permanently=permanently)
         action = "Permanently deleted" if permanently else "Deleted (soft)"
         return f"{action} block {block_id}"
+
+    @mcp.tool()
+    def delete_blocks(
+        block_ids: str,
+        permanently: bool = False,
+    ) -> str:
+        """Delete MANY blocks in ONE batch — pages' content cleanup in a single call.
+
+        Args:
+            block_ids: JSON array of block URLs or IDs, e.g. ["abc123","def456"]
+            permanently: If true, permanently delete after archiving (cannot undo)
+
+        Returns:
+            "Deleted N of M block(s)" with per-block failures if any.
+            ~2 ops per block batched into chunks of 100 — deleting 50 blocks
+            costs ~1 HTTP call instead of 50.
+        """
+        client = _get_client()
+        try:
+            ids = json.loads(block_ids)
+        except json.JSONDecodeError as exc:
+            return f"Invalid block_ids JSON: {exc}; 0 blocks deleted"
+        if not isinstance(ids, list):
+            return "block_ids must be a JSON array of block ids"
+        from unpy.blocks import remove_blocks
+
+        count, failures = remove_blocks(client, ids, permanently=permanently)
+        action = "Permanently deleted" if permanently else "Deleted (soft)"
+        msg = f"{action} {count} of {len(ids)} block(s)"
+        if failures:
+            msg += " (" + "; ".join(failures) + ")"
+        return msg
 
     @mcp.tool()
     def move_block(
@@ -2155,6 +2250,104 @@ if _WRITE_ENABLED:
         except TypeError:
             row.remove()
         return f"Deleted row {row_id}"
+
+    @mcp.tool()
+    def add_database_rows(
+        database_id: str,
+        rows: str,
+    ) -> str:
+        """Add MANY rows to a database in ONE batch.
+
+        Args:
+            database_id: Database block URL or ID, or collection ID
+            rows: JSON array of property objects, e.g.
+                [{"Name":"Row 1","Status":"Todo"},{"Name":"Row 2"}]
+                Same columns-by-name values as add_database_row; select
+                options are created on demand; two-way relations mirror.
+
+        Returns:
+            "Created N of M row(s) — <id1>, <id2>, …" so ids can be used
+            directly; per-row failures listed when any. All rows are
+            created in one batched transaction (~1 HTTP call per 100 ops).
+        """
+        client = _get_client()
+        from unpy.schema import resolve_collection_for_write
+
+        collection = resolve_collection_for_write(client, database_id)
+        if isinstance(collection, str):
+            return collection
+        try:
+            specs = json.loads(rows)
+        except json.JSONDecodeError as exc:
+            return f"Invalid rows JSON: {exc}; 0 rows created"
+        from unpy.rows import add_rows
+
+        row_ids, failures = add_rows(client, collection, specs)
+        if not isinstance(specs, list):
+            specs = []
+        msg = f"Created {len(row_ids)} of {len(specs)} row(s)"
+        if row_ids:
+            msg += " — " + ", ".join(row_ids)
+        if failures:
+            msg += " (" + "; ".join(failures) + ")"
+        return msg
+
+    @mcp.tool()
+    def update_database_rows(
+        updates: str,
+    ) -> str:
+        """Update property maps on MANY database rows in ONE batch.
+
+        Args:
+            updates: JSON array, e.g.
+                [{"row_id":"abc","properties":{"Status":"Done"}},
+                 {"row_id":"def","properties":{"Points":3}}]
+                Same columns-by-name values as update_database_row.
+
+        Returns:
+            "Updated N of M row(s)" with per-row failures when any; batched
+            (~1 HTTP call per 100 ops instead of 1 per row).
+        """
+        client = _get_client()
+        try:
+            specs = json.loads(updates)
+        except json.JSONDecodeError as exc:
+            return f"Invalid updates JSON: {exc}; 0 rows updated"
+        from unpy.rows import update_rows
+
+        count, failures = update_rows(client, specs)
+        msg = f"Updated {count} of {len(specs) if isinstance(specs, list) else 0} row(s)"
+        if failures:
+            msg += " (" + "; ".join(failures) + ")"
+        return msg
+
+    @mcp.tool()
+    def delete_database_rows(
+        row_ids: str,
+        permanently: bool = False,
+    ) -> str:
+        """Delete MANY database rows in ONE batch.
+
+        Args:
+            row_ids: JSON array of row block IDs, e.g. ["abc123","def456"]
+            permanently: If true, permanently delete after archiving
+
+        Returns:
+            "Deleted N of M row(s)" with failures when any; batched
+            (~2 ops per row, chunked).
+        """
+        client = _get_client()
+        try:
+            ids = json.loads(row_ids)
+        except json.JSONDecodeError as exc:
+            return f"Invalid row_ids JSON: {exc}; 0 rows deleted"
+        from unpy.rows import delete_rows
+
+        count, failures = delete_rows(client, ids, permanently=permanently)
+        msg = f"Deleted {count} of {len(ids) if isinstance(ids, list) else 0} row(s)"
+        if failures:
+            msg += " (" + "; ".join(failures) + ")"
+        return msg
 
     @mcp.tool()
     def create_database(

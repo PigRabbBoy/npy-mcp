@@ -534,6 +534,31 @@ class NotionClient(object):
         """
         self._store.call_get_record_values(**kwargs)
 
+    def refresh_blocks(self, block_ids):
+        """Batch force-refresh block records from the server (v2, issue #43).
+
+        One syncRecordValues call per 50 ids, results marked fresh so the
+        following reads are served from the JUST-fetched data (TTL re-stamps —
+        no extra network). The point of this helper is bypassing the TTL
+        window for ids already in the store: get_page(refresh=True) needs the
+        children's CURRENT server state, not their 15s-old snapshot.
+        """
+        ids = []
+        seen = set()
+        for bid in block_ids or []:
+            key = extract_id(bid)
+            if key and key not in seen:
+                seen.add(key)
+                ids.append(key)
+        # expire the TTL stamps so the sync below is not skipped
+        with self._store._mutex:
+            for key in ids:
+                self._store._fetched_at.get("block", {}).pop(key, None)
+        for i in range(0, len(ids), 50):
+            batch = ids[i : i + 50]
+            if batch:
+                self._store.call_get_record_values(_force_real_request=True, block=batch)
+
     def refresh_collection_rows(self, collection_id):
         row_ids = [
             row.id
@@ -921,6 +946,9 @@ class _BatchedTransaction(object):
         operations = self.client._transaction_operations
         del self.client._transaction_operations
         if exc_type:
+            # chunks already committed by the enclosing caller stay; the
+            # buffered tail (incl. the failing op) is dropped — reported as
+            # failures by the caller via the exception (issue #43 semantics)
             self.client._store.handle_post_transaction_refreshing()
             return
         # submit as ONE buffered flush; submit_transaction itself enforces the

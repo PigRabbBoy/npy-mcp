@@ -254,10 +254,16 @@ class RecordStore(object):
         # look up the record in the current local dataset
         result = self._get(table, id)
         # v2 TTL cache: a record fetched within the window counts as fresh —
-        # even an explicit force_refresh skips the network inside the window
-        # (that is the freshness tradeoff v2 makes; UNPY_CACHE_TTL=0 or
-        # UNPY_LEGACY=1 restores always-refresh)
-        if result is not Missing and self._record_is_fresh(table, id):
+        # but an explicit force_refresh must BYPASS the window (issue #43):
+        # inside a long-lived MCP client the stale snapshot made get_page /
+        # update_block / delete_block act on data the user had already
+        # changed elsewhere ("edit seems to not stick"). UNPY_CACHE_TTL=0 or
+        # UNPY_LEGACY=1 restores always-refresh for every read.
+        if (
+            result is not Missing
+            and not force_refresh
+            and self._record_is_fresh(table, id)
+        ):
             return result
         # if it's not found, try refreshing the record from the server
         if result is Missing or force_refresh:

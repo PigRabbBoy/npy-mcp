@@ -2,8 +2,11 @@
 
 v1 semantics anchor: an UNFORCED get() of a cached record never re-fetched
 (v1 was "cache forever" for plain reads); forced gets always refreshed.
-v2 TTL changes ONE thing: inside the TTL window even a FORCED get serves
-the cached copy. UNPY_CACHE_TTL=0 or UNPY_LEGACY=1 restores v1 exactly.
+v2 TTL keeps that for UNFORCED reads; a FORCED get always refreshes even
+inside the window — issue #43 reverted the "forced get serves the cached
+copy" shortcut because get_page/update_block/delete_block acted on stale
+snapshots inside long-lived MCP clients. UNPY_CACHE_TTL=0 or
+UNPY_LEGACY=1 restores v1 exactly.
 """
 
 import time
@@ -37,14 +40,21 @@ B1 = "11111111-1111-4111-8111-111111111111"
 
 
 class TestTTLCache:
-    def test_fresh_record_skips_forced_refresh(self, monkeypatch):
-        """v2 gain: MCP read tools pass force_refresh=True; inside the TTL
-        window the cached copy is served without a network refresh."""
+    def test_fresh_record_serves_unforced_get(self, monkeypatch):
+        """v2 gain: plain reads inside the TTL window skip the network."""
         store = _fresh_client(monkeypatch)
         store._update_record("block", B1, value={"id": B1}, role="editor")
-        result = store.get("block", B1, force_refresh=True)
+        result = store.get("block", B1)
         assert result == {"id": B1}
         assert store.calls == []
+
+    def test_forced_get_refreshes_even_inside_ttl_window(self, monkeypatch):
+        """Regression #43: force_refresh=True must bypass the freshness
+        window — get_page(refresh=True) needs CURRENT server state."""
+        store = _fresh_client(monkeypatch)
+        store._update_record("block", B1, value={"id": B1}, role="editor")
+        store.get("block", B1, force_refresh=True)
+        assert len(store.calls) == 1
 
     def test_stale_record_refreshes_on_forced_get(self, monkeypatch):
         store = _fresh_client(monkeypatch, ttl="0.05")
